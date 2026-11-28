@@ -4646,6 +4646,21 @@ fn storm_source_contract_is_structurally_valid(
                 && source.v4.spell_cast_origin == contract.spell_cast_origin))
 }
 
+/// The stack generation that the cast receipt published directly before the
+/// SpellCast marker at `marker` gives `spell`, or `None` when that marker
+/// has no such receipt.
+fn cast_receipt_stack_generation(state: &GameState, marker: usize, spell: ObjectId) -> Option<u32> {
+    match state.engine.event_history.get(marker.checked_sub(1)?)? {
+        CommittedEvent::PublishedCastIdentityV1 { receipt }
+            if receipt.spell == spell
+                && usize::try_from(receipt.spell_cast_history_index) == Ok(marker) =>
+        {
+            Some(receipt.stack_zone_change_count)
+        }
+        _ => None,
+    }
+}
+
 fn storm_copy_count_from_binding(
     state: &GameState,
     binding: StormCopyBindingV1,
@@ -4667,18 +4682,30 @@ fn storm_copy_count_from_binding(
     {
         return Err("Storm binding lost its exact SpellCast marker".to_string());
     }
+    let source_generation = binding.source_contract.zone_change_count;
+    let bound_generation =
+        cast_receipt_stack_generation(state, event_index, binding.source_contract.source);
+    if bound_generation.is_some_and(|generation| generation != source_generation) {
+        return Err("Storm binding names another incarnation's cast marker".to_string());
+    }
+    // CR 400.7: a spell returned to hand (Remand, Reprieve) is a new object
+    // and may be cast again while this trigger waits. That later cast is
+    // its own, so it is accepted only when both markers carry their published
+    // cast receipts and the later one names a later stack generation.
     if state
         .engine
         .event_history
         .iter()
         .enumerate()
         .skip(event_index + 1)
-        .any(|(_, event)| {
+        .any(|(at, event)| {
             matches!(
                 event,
                 CommittedEvent::SpellCast { spell, .. }
                     if *spell == binding.source_contract.source
-            )
+            ) && (bound_generation.is_none()
+                || cast_receipt_stack_generation(state, at, binding.source_contract.source)
+                    .is_none_or(|generation| generation <= source_generation))
         })
     {
         return Err("Storm source was cast again after the bound cast marker".to_string());

@@ -7310,11 +7310,12 @@ fn validate_owner_library_target_binding(
     }
     validate_effect_object_binding(state, object)?;
     let live = state.objects.get(object.object);
+    // CR 608.2b: the target's current characteristics, as its selection
+    // used. A face-down manifested land is a nonland 2/2 (CR 708.2a).
     if live.owner != owner
         || live.card_def != *card_def
         || (recipe.target_spec == crate::card_def::TargetSpec::NonlandPermanent
-            && crate::card_def::CARD_DEFS[live.card_def as usize]
-                .has_type(crate::card_def::CardType::Land))
+            && crate::engine::object_has_type(state, object.object, CardType::Land))
         || (recipe.target_spec == crate::card_def::TargetSpec::Creature
             && !crate::engine::object_has_type(state, object.object, CardType::Creature))
     {
