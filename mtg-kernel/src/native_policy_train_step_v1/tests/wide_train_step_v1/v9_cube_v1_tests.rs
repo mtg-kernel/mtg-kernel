@@ -40,7 +40,7 @@ impl V9DecisionV1 {
         base: GradientDecisionV1,
         include_rows: &[usize],
         pairs: &[i64],
-        salt: usize,
+        offset: usize,
     ) -> Self {
         let mut action_features = Vec::new();
         for (row, features) in base
@@ -65,14 +65,15 @@ impl V9DecisionV1 {
                         if row % 3 == 2 {
                             0.0
                         } else {
-                            column_v1(salt + row * 64 + column)
+                            column_v1(offset + row * 64 + column)
                         }
                     }),
             );
         }
         let mut state = base.state.clone();
-        state
-            .extend((0..FLAT_V9_STATE_EXTRA_DIM_V1).map(|column| column_v1(salt + 7_000 + column)));
+        state.extend(
+            (0..FLAT_V9_STATE_EXTRA_DIM_V1).map(|column| column_v1(offset + 7_000 + column)),
+        );
         Self {
             base,
             state,
