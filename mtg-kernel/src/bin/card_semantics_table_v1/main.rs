@@ -604,7 +604,13 @@ fn publish_staged_with(
     let next_companion = stage.join(NEXT_COMPANION_FILE);
     let old_companion = stage.join(PREVIOUS_COMPANION_FILE);
     let companion_path = companion.map(|(rel, _)| repo.join(rel));
-    for (retained, of) in [(&old_dump, "dump"), (&old_companion, "companion")] {
+    // Only files this publication owns are checked and removed: without a
+    // companion, the companion names are someone else's files.
+    let mut retained_files = vec![(&old_dump, &dump, "dump")];
+    if let Some(path) = &companion_path {
+        retained_files.push((&old_companion, path, "companion"));
+    }
+    for (retained, destination, of) in retained_files {
         match fs::symlink_metadata(retained) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Ok(_) => {
@@ -612,7 +618,7 @@ fn publish_staged_with(
                     "{} holds the {of} retained by an earlier failed or interrupted publication; \
                      reconcile {} and {} with it (restore it as the {of} or delete it), then rerun",
                     retained.display(),
-                    dump.display(),
+                    destination.display(),
                     table.display()
                 ));
             }
@@ -677,12 +683,15 @@ fn publish_staged_with(
     // Attempt every step; only the generator's own staged files are removed.
     // The staging directory stays: it holds the permanent writer lock.
     let mut cleanup = Vec::new();
-    let mut owned = vec![&next_table, &next_dump, &next_companion];
+    let mut owned = vec![&next_table, &next_dump];
     if !preserve_old_dump {
         owned.push(&old_dump);
     }
-    if !preserve_old_companion {
-        owned.push(&old_companion);
+    if companion.is_some() {
+        owned.push(&next_companion);
+        if !preserve_old_companion {
+            owned.push(&old_companion);
+        }
     }
     for file in owned {
         match fs::remove_file(file) {
@@ -1069,16 +1078,75 @@ mod tests {
         let temp = scratch_repo("foreign-failed");
         let stage = staging_dir(&temp, table::TABLE_PATH);
         std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(stage.join("local.txt"), "local work").unwrap();
+        // A publication without a companion owns neither companion name.
+        let foreign = ["local.txt", NEXT_COMPANION_FILE, PREVIOUS_COMPANION_FILE];
+        for name in foreign {
+            std::fs::write(stage.join(name), "local work").unwrap();
+        }
         std::fs::create_dir(temp.join(table::TABLE_PATH)).unwrap();
         std::fs::write(temp.join(table::DUMP_PATH), "original").unwrap();
-        assert!(locked_write(&temp, &generated("new table", "new dump")).is_err());
+        let error = locked_write(&temp, &generated("new table", "new dump")).unwrap_err();
+        assert!(!error.contains("retained"), "{error}");
         assert_eq!(read(&temp, table::DUMP_PATH).unwrap(), "original");
-        assert_eq!(
-            std::fs::read_to_string(stage.join("local.txt")).unwrap(),
-            "local work"
+        for name in foreign {
+            assert_eq!(
+                std::fs::read_to_string(stage.join(name)).unwrap(),
+                "local work"
+            );
+        }
+        let mut expected = foreign.map(String::from).to_vec();
+        expected.push(LOCK_FILE.into());
+        expected.sort();
+        assert_eq!(staged(&temp, table::TABLE_PATH), expected);
+        // A successful publication without a companion leaves them too.
+        std::fs::remove_dir(temp.join(table::TABLE_PATH)).unwrap();
+        locked_write(&temp, &generated("new table", "new dump")).unwrap();
+        assert_eq!(read(&temp, table::TABLE_PATH).unwrap(), "new table");
+        assert_eq!(staged(&temp, table::TABLE_PATH), expected);
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    /// With a companion, a retained companion copy blocks the next write and
+    /// names the companion's own destination; a failed table rename restores
+    /// the dump and the companion.
+    #[test]
+    fn companion_publication_restores_on_failure_and_names_its_destination() {
+        let temp = scratch_repo("companion");
+        let companion_rel = "data/card_semantics_v1/companion_fixture.json";
+        std::fs::write(temp.join(table::DUMP_PATH), "old dump").unwrap();
+        std::fs::write(temp.join(companion_rel), "old companion").unwrap();
+        std::fs::create_dir(temp.join(table::TABLE_PATH)).unwrap();
+        let publish = |temp: &Path| {
+            with_writer_lock(temp, table::TABLE_PATH, || {
+                publish_staged_with(
+                    temp,
+                    table::TABLE_PATH,
+                    table::DUMP_PATH,
+                    &generated("new table", "new dump"),
+                    Some((companion_rel, "new companion")),
+                    rename_file,
+                )
+            })
+        };
+        let error = publish(&temp).unwrap_err();
+        assert!(!error.contains("could not restore"), "{error}");
+        assert_eq!(read(&temp, table::DUMP_PATH).unwrap(), "old dump");
+        assert_eq!(read(&temp, companion_rel).unwrap(), "old companion");
+        assert_eq!(staged(&temp, table::TABLE_PATH), [LOCK_FILE]);
+        let stage = staging_dir(&temp, table::TABLE_PATH);
+        std::fs::write(stage.join(PREVIOUS_COMPANION_FILE), "kept").unwrap();
+        std::fs::remove_dir(temp.join(table::TABLE_PATH)).unwrap();
+        let retry = publish(&temp).unwrap_err();
+        let destination = temp.join(companion_rel).display().to_string();
+        assert!(
+            retry.contains("companion retained") && retry.contains(&destination),
+            "{retry}"
         );
-        assert_eq!(staged(&temp, table::TABLE_PATH), ["local.txt", LOCK_FILE]);
+        std::fs::remove_file(stage.join(PREVIOUS_COMPANION_FILE)).unwrap();
+        publish(&temp).unwrap();
+        assert_eq!(read(&temp, table::TABLE_PATH).unwrap(), "new table");
+        assert_eq!(read(&temp, companion_rel).unwrap(), "new companion");
+        assert_eq!(staged(&temp, table::TABLE_PATH), [LOCK_FILE]);
         std::fs::remove_dir_all(temp).unwrap();
     }
 
@@ -1704,7 +1772,9 @@ mod tests {
         for path in allowed.into_iter().chain(denied) {
             let path = temp.join(path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, table::CUBE_TABLE_PATH).unwrap();
+            // M4's consumers name the provisional table (the full table is
+            // covered by arm_e_cube_module_imports_outside_its_declarations_are_flagged).
+            std::fs::write(&path, table::CUBE_PROVISIONAL_TABLE_PATH).unwrap();
         }
 
         let mut expected = denied.map(|path| temp.join(path));
@@ -1751,12 +1821,33 @@ mod tests {
             reexport,
             "pub mod card_semantics_e1_cube_v1;\nuse mtg_kernel::card_semantics_e1_cube_v1::TABLE_PATH_V1;\n",
         );
+        // M4's provisional-table consumers may name the provisional table but
+        // not the full one or the arm E module.
+        write(
+            "mtg-kernel/src/cube_draft_build_v1/card_index.rs",
+            "const TABLE: &str = \"data/card_semantics_v1/cube_table_v1.json\";\n",
+        );
+        let m4_full = "mtg-kernel/src/cube_draft_build_v1/full_reader.rs";
+        write(
+            m4_full,
+            "use crate::card_semantics_e1_cube_v1::TABLE_PATH_V1;\n",
+        );
+        let m4_full_path = "mtg-kernel/examples/cube_pod_runner/full_path.rs";
+        write(
+            m4_full_path,
+            "const T: &str = \"data/card_semantics_v1/cube_table_v1_full.json\";\n",
+        );
+        let mut expected = vec![
+            temp.join(reexport),
+            temp.join(consumer),
+            temp.join(m4_full),
+            temp.join(m4_full_path),
+        ];
+        expected.sort();
         let hits: Vec<_> = checks::unreferenced(&temp)
             .into_iter()
             .map(PathBuf::from)
             .collect();
-        let mut expected = vec![temp.join(reexport), temp.join(consumer)];
-        expected.sort();
         // The declarations alone are not hits; a second line in lib.rs is.
         write(
             "mtg-kernel/src/lib.rs",

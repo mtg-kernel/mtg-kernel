@@ -807,6 +807,9 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
         "cube_table_v1",
         ARM_E_CUBE_MODULE,
     ];
+    // What M4's provisional-table consumers may still not name: the full
+    // table (M2 T8) and the module exporting its path. D15 moves them.
+    let full_table_needles = ["cube_table_v1_full", ARM_E_CUBE_MODULE];
     let roots = [
         "mtg-kernel/src",
         "mtg-kernel/tests",
@@ -847,19 +850,20 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
     let mut stack: Vec<std::path::PathBuf> = roots.iter().map(|r| repo.join(r)).collect();
     while let Some(path) = stack.pop() {
         if path.starts_with(&generator)
-            || path.starts_with(&declared_consumer_dir)
+            || (path.components().eq(arm_e_cube.components()) && path.is_file())
+            || (path.components().eq(arm_e_cube_test.components()) && path.is_file())
+        {
+            continue;
+        }
+        // M4's declared consumers read the provisional table only.
+        let provisional_consumer = path.starts_with(&declared_consumer_dir)
             || (path.components().eq(declared_consumer_test.components()) && path.is_file())
             || path.starts_with(&owner_view_dir)
             || (path.components().eq(owner_view_example.components()) && path.is_file())
             || path.starts_with(&launcher_dir)
             || (path.components().eq(launcher_example.components()) && path.is_file())
             || path.starts_with(&read_executor_dir)
-            || (path.components().eq(read_executor_example.components()) && path.is_file())
-            || (path.components().eq(arm_e_cube.components()) && path.is_file())
-            || (path.components().eq(arm_e_cube_test.components()) && path.is_file())
-        {
-            continue;
-        }
+            || (path.components().eq(read_executor_example.components()) && path.is_file());
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name == "node_modules" || name == "__pycache__" || name.starts_with('.') {
@@ -878,7 +882,12 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
                     text = text.replace(declaration, "");
                 }
             }
-            if needles.iter().any(|needle| text.contains(needle)) {
+            let checked: &[&str] = if provisional_consumer {
+                &full_table_needles
+            } else {
+                &needles
+            };
+            if checked.iter().any(|needle| text.contains(needle)) {
                 hits.push(path.display().to_string());
             }
         }
