@@ -37,7 +37,7 @@ arguments are refused with it, and without it nothing above changes):
 
   runtime_receipt.py --training-config SEGMENT.json [...] --cube-pins PINS.json --cube-pool POOL.json
       --cube-constants CONSTANTS.json --cube-base BASE.json
-      [--production --cube-pins-sha256 SIGNED_DIGEST] [--out RECEIPT.json]
+      [--production --cube-pins-sha256 EXPECTED_DIGEST --cube-trainer TRAINER] [--out RECEIPT.json]
 
 The raw cube receipt of `runtime_parity.py` is recomputed and must pass. The segment is then bound to the signed M3
 Stage 1 declaration (draft 3, signed text SHA-256 below): the dealer, cube list, gaps and fence_v3 hashes, the 15
@@ -51,14 +51,18 @@ Identities that only Gate 1 can fix (M3.10; T6, T8 and T9 are not merged) come f
 entry per item in `GATE1_ITEMS`, each `{fixture, owner, section, value}`; the value must equal what the inputs
 show. An entry with `fixture: true` is reported as `fixture` and listed under `gate1_to_fill`. Production requires
 all values filled, the ruled engine windows, a non-placeholder import hash, and `--cube-pins-sha256` from the
-signed Gate 1 manifest. Production also checks each resume checkpoint against the signed pins'
-`checkpoint_sha256_by_config` list in input order. Fresh configs use null; if omitted, all are fresh. Gate 1 must fill: the compiled `KERNEL_CARDDB_HASH`,
+trusted Gate 1 materialization. The chain can derive later segment pins from that materialization and verified
+update receipts. Production checks each checkpoint against `checkpoint_sha256_by_config` in input order (null
+for fresh, omitted if all are fresh) and calls the existing `--validate-config` mode of the executable pinned
+as `trainer_sha256`. That mode validates config shape and registered cards. Model and checkpoint file contents
+are checked by the normal trainer when it loads them. Gate 1 must fill: the compiled `KERNEL_CARDDB_HASH`,
 the `cube_card_ids/v1` export SHA-256, the active pool SHA-256, T9's `pairs_per_update` (N / 2) and the
 `m3_train_constants.json` SHA-256, T6's FlatV9 initial-source play import, and T8's `card_semantics` block (Arm E).
 """
 from __future__ import annotations
 
 import argparse
+import re
 import ast
 import contextlib
 import hashlib
@@ -220,8 +224,13 @@ M3_RECIPE = {"training_math": "portable-math-v1", "trajectory_format": "binary_v
 M3_RECIPE_F32 = {"learning_rate": 0.0001, "value_coefficient": 0.5}  # M3.5 item 1, compared as binary32
 M3_LOSS = {"kind": "gae_advantage_value_v1", "gamma": 1.0, "lambda": 0.9, "entropy_coefficient": 0.0}
 M3_ABSENT_RUN_KEYS = ("update_backend", "line_b", "e_supported", "soft_q", "search_targets", "ex1")
+M3_EPISODE_PROFILE = {
+    "opening": "london-v1", "mulligan_modes": ["learned", "learned"], "runtime_rules": None,
+    "priority_windows": ["engine-windows-v1"] * 2, "max_physical_decisions": 16384,
+    "max_policy_steps": 32768, "max_stack_objects": 128,
+}
 GATE1_ITEMS = ("kernel_carddb_hash", "id_export_sha256", "pool_sha256", "pairs_per_update", "constants_sha256",
-               "flatv9_play_import_sha256", "card_semantics")
+               "flatv9_play_import_sha256", "flatv9_feature_transfer", "card_semantics")
 
 
 def f32_bits(value) -> int | None:
@@ -256,6 +265,7 @@ def gate1_observed(raw: dict, pool: dict, constants: dict, base: dict) -> dict:
             "pairs_per_update": constants.get("pairs_per_update"),
             "constants_sha256": raw["inputs"]["constants_sha256"],
             "flatv9_play_import_sha256": play_import.get("sha256") if isinstance(play_import, dict) else None,
+            "flatv9_feature_transfer": source.get("feature_transfer") if isinstance(source, dict) else None,
             "card_semantics": base.get("card_semantics")}
 
 
@@ -310,6 +320,31 @@ def cube_requirements(raw: dict, pins: dict, pool: dict, constants: dict, base: 
     return out
 
 
+def validate_cube_native_configs(trainer, expected_sha, raw, configs) -> list[dict]:
+    if trainer is None or not rp.is_sha256(expected_sha):
+        raise ReceiptError("production requires --cube-trainer with a trusted trainer_sha256 pin")
+    with trainer.open("rb") as stream:
+        actual_sha = hashlib.file_digest(stream, "sha256").hexdigest()
+    if actual_sha != expected_sha:
+        raise ReceiptError("native validation trainer differs from its SHA-256 pin")
+    validation = []
+    card_db_hash = raw["pins"]["pool"]["kernel_carddb_hash"]
+    for config, pin in zip(configs, raw["inputs"]["training_configs"]):
+        result = subprocess.run([str(trainer.resolve()), "--validate-config", str(config.resolve())],
+                                capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise ReceiptError(f"native config admission failed: {result.stderr.strip()}")
+        record = json.loads(result.stdout)
+        if record.get("schema") != "phase1-native-expanded-config-validation/v1" \
+                or record.get("validation_scope") != "config-shape-and-registered-cards-only" \
+                or record.get("native_execution") is not False or record.get("model_loaded") is not False \
+                or record.get("config_sha256") != pin["sha256"] \
+                or record.get("runtime", {}).get("card_db_hash") != card_db_hash:
+            raise ReceiptError("native validation receipt differs from the pinned config or card database")
+        validation.append(record)
+    return validation
+
+
 PAUPER_ARGUMENTS = ("board_run", "board_snapshot", "repo", "amendment", "amendment_commit", "census", "h_plan",
                     "s0_config", "engine_binary", "wrapper", "scorer", "bot", "collab_repo")
 
@@ -344,14 +379,19 @@ def cube_main(args, parser) -> int:
             raise ReceiptError("the raw receipt was computed from other inputs")
         docs = {name: json.loads(blob) for name, blob in data.items()}
         requirements = cube_requirements(raw, docs["pins"], docs["pool"], docs["constants"], docs["base"])
-    except (ReceiptError, rp.ParityError, KeyError, ValueError, TypeError, AttributeError) as exc:
+    except (OSError, ReceiptError, rp.ParityError, KeyError, ValueError, TypeError, AttributeError) as exc:
         print(f"error: {exc!r}", file=sys.stderr)
         return 1
     fixtures = [r["id"] for r in requirements if r["status"] == "fixture"]
+    native_validation = []
     if args.production or args.cube_pins_sha256 is not None:
         trusted = args.cube_pins_sha256
-        import_sha = gate1_observed(raw, docs["pool"], docs["constants"], docs["base"])["flatv9_play_import_sha256"]
-        windows = docs["pins"]["episode"].get("priority_windows")
+        base = docs["base"]
+        observed = gate1_observed(raw, docs["pool"], docs["constants"], base)
+        import_sha = observed["flatv9_play_import_sha256"]
+        card_db = observed["kernel_carddb_hash"]
+        model = base.get("initial_source") or {}
+        profiles = raw["episode_runtime_profiles"]
         checkpoints = []
         for fields in raw["per_segment_fields"]:
             source = fields.get("initial_source")
@@ -365,9 +405,34 @@ def cube_main(args, parser) -> int:
                         rp.is_sha256(import_sha) and import_sha != "0" * 64),
             requirement("gate1.segment_checkpoints", "M3.5 and M3.10", expected_checkpoints, checkpoints,
                         rp.same_json(checkpoints, expected_checkpoints)),
-            requirement("recipe.engine_windows", "M3.4 and DECISIONS-2", ["engine-windows-v1"] * 2, windows,
-                        rp.same_json(windows, ["engine-windows-v1"] * 2)),
+            requirement("gate1.card_identifiers", "M3.4 and M3.10", "valid card database and export identities",
+                        [card_db, observed["id_export_sha256"]],
+                        isinstance(card_db, str) and re.fullmatch(r"[0-9a-f]{16}", card_db) is not None
+                        and rp.is_sha256(observed["id_export_sha256"]) and observed["id_export_sha256"] != "0" * 64),
+            requirement("gate1.model_transfer", "M3.4 and M3.10", "pinned transfer on the ordinary learner",
+                        observed["flatv9_feature_transfer"],
+                        observed["flatv9_feature_transfer"] is not None
+                        and not any(key in model for key in ("s_learner", "w_learner"))),
+            requirement("recipe.episode_profile", "M3.4, M3.6 and DECISIONS-2", [M3_EPISODE_PROFILE], profiles,
+                        rp.same_json(profiles, [M3_EPISODE_PROFILE])),
+            requirement("recipe.prepared_update", "M3.3 and M3.5", "parallel sequential-backward CPU update",
+                        {key: base.get(key) for key in ("collection_workers", "preparation_workers",
+                                                        "update_backward_execution", "max_prepared_tensor_mebibytes",
+                                                        "opponents", "record_format")},
+                        all(type(base.get(key)) is int and base[key] > 1
+                            for key in ("collection_workers", "preparation_workers"))
+                        and base.get("update_backward_execution", "sequential") == "sequential"
+                        and rp.same_json(base.get("max_prepared_tensor_mebibytes", 256), 256)
+                        and base.get("opponents") == []
+                        and (base.get("card_semantics") is None or base.get("record_format", "auto") in ("auto", "v2"))),
         ])
+        if not fixtures and all(row["status"] == "holds" for row in requirements):
+            try:
+                native_validation = validate_cube_native_configs(
+                    args.cube_trainer, docs["pins"].get("trainer_sha256"), raw, args.training_config)
+            except (OSError, ReceiptError, ValueError, AttributeError, subprocess.SubprocessError) as exc:
+                requirements.append(requirement("gate1.native_config_admission", "M3.10",
+                                                "all configs accepted by the pinned trainer", str(exc), False))
     failing = [r["id"] for r in requirements if r["status"] == "fails"]
     production = args.cube_pins_sha256 is not None and not fixtures and not failing
     receipt = {
@@ -375,6 +440,7 @@ def cube_main(args, parser) -> int:
         "pass": raw["pass"] and not failing and (not args.production or production),
         "production": production, "production_required": args.production,
         "raw_failures": sorted(k for k, v in raw["checks"].items() if not v),
+        "native_config_validation": native_validation,
         "failing_requirements": failing, "gate1_to_fill": fixtures,
         "declaration": M3_DECLARATION, "segment": raw["schedule"]["segment"], "requirements": requirements,
         "raw_receipt": {"path": str(raw_receipt_path), "sha256": sha256_bytes(raw_receipt_path.read_bytes())},
@@ -415,11 +481,12 @@ def main(argv=None) -> int:
     parser.add_argument("--cube-base", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--production", action="store_true", help=argparse.SUPPRESS)  # see "Cube segments"
     parser.add_argument("--cube-pins-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--cube-trainer", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.cube_pins is not None:
         return cube_main(args, parser)
     if args.production or any(v is not None for v in (args.cube_pool, args.cube_constants, args.cube_base,
-                                                       args.cube_pins_sha256)):
+                                                       args.cube_pins_sha256, args.cube_trainer)):
         parser.error("Cube arguments require --cube-pins")
     try:
         raw_receipt_path = (args.out or Path("runtime-parity-raw.json")).with_suffix(".raw.json")

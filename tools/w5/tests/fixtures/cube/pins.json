@@ -23,6 +23,7 @@
     "pairs_per_update": {"fixture": true, "owner": "T9 (N / 2)", "section": "M3.3", "value": 8},
     "constants_sha256": {"fixture": true, "owner": "T9 (m3_train_constants.json)", "section": "M3.3, M3.10", "value": "9c9d10326dececc9a332999c9ee8210a4d6e6dc40ceaa1211590968016e168ef"},
     "flatv9_play_import_sha256": {"fixture": true, "owner": "T6 (FlatV9 initial source)", "section": "M3.4, M3.10", "value": "0000000000000000000000000000000000000000000000000000000000000000"},
+    "flatv9_feature_transfer": {"fixture": true, "owner": "T6 (FlatV9 transfer)", "section": "M3.4, M3.10", "value": null},
     "card_semantics": {"fixture": true, "owner": "T8 (Arm E on, card_semantics_e1 table)", "section": "M3.2, M3.10", "value": null}
   }
 }

@@ -91,6 +91,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -449,9 +450,10 @@ def sha256(data: bytes) -> str:
 
 # ---- Cube segments (T12) -------------------------------------------------------------------------------------
 
-DEALT_EPISODE_KEYS = frozenset({"id", "seed", "starting_player", "learner_seat", "registered", "selected", "postboard",
-                                "max_physical_decisions", "max_policy_steps", "runtime_rules", "opening",
-                                "mulligan_modes"})
+CUBE_RUNTIME_FIELDS = (
+    "opening", "mulligan_modes", "runtime_rules", "priority_windows",
+    "max_physical_decisions", "max_policy_steps", "max_stack_objects",
+)
 STAMPED_EPISODE_KEYS = frozenset(CUBE_OPT_INS) | {"max_stack_objects", "priority_windows"}  # seat-independent fields the pins may stamp
 
 
@@ -491,6 +493,10 @@ def check_cube_pins(pins) -> dict:
         raise ParityError(f"the cube pins' episode must declare {CUBE_OPT_INS}")
     if set(episode) - STAMPED_EPISODE_KEYS:
         raise ParityError(f"the cube pins' episode may stamp only {sorted(STAMPED_EPISODE_KEYS)}")
+    if "max_stack_objects" in episode:
+        cap = episode["max_stack_objects"]
+        if type(cap) is not int or not 1 <= cap <= 0xFFFFFFFF:
+            raise ParityError("max_stack_objects must be a positive u32")
     return pins
 
 
@@ -584,18 +590,41 @@ def initial_model_identity(source):
     }
 
 
-def cube_model_sources_match(configs: list[dict], base: dict) -> bool:
+def cube_segment_structure_matches(configs: list[dict], base: dict, start: int) -> bool:
     expected = initial_model_identity(base.get("initial_source"))
     if expected is None:
         return False
-    for config in configs:
+    locations = set()
+    for index, config in enumerate(configs):
+        iterations = config.get("iterations")
+        if not isinstance(iterations, list) or not 1 <= len(iterations) <= 4096:
+            return False
+        location = config.get("output_directory")
+        if not isinstance(location, str) or not location:
+            return False
+        canonical_location = os.path.normcase(os.path.abspath(location))
+        if canonical_location in locations:
+            return False
+        locations.add(canonical_location)
         source = config.get("initial_source")
         if not same_json(initial_model_identity(source), expected):
             return False
         checkpoint = source.get("checkpoint")
-        if checkpoint is not None and (not isinstance(checkpoint, dict) or not is_sha256(checkpoint.get("sha256"))):
+        if index == 0 and start == 0:
+            if checkpoint is not None:
+                return False
+        elif not isinstance(checkpoint, dict) or not is_sha256(checkpoint.get("sha256")):
             return False
     return True
+
+
+def cube_runtime_profiles(configs: list[dict]) -> list[dict]:
+    profiles = {}
+    for config in configs:
+        for episode in episodes(config):
+            profile = {key: episode.get(key) for key in CUBE_RUNTIME_FIELDS}
+            profiles[json.dumps(profile, sort_keys=True)] = profile
+    return list(profiles.values())
 
 
 def run_fields(config: dict) -> dict:
@@ -631,7 +660,7 @@ def cube_compare(configs: list[dict], pins: dict, pool_doc: dict, constants_doc:
         "episodes_carry_the_pinned_opt_ins": all(all(k in ep and same_json(ep[k], v) for k, v in pins["episode"].items())
                                                  for c in configs for ep in episodes(c)),
         "run_fields_equal_the_base": all(same_json(run_fields(c), run_fields(base_doc)) for c in configs)
-        and cube_model_sources_match(configs, base_doc),
+        and cube_segment_structure_matches(configs, base_doc, pins["segment"]["update_start"]),
         "schedule_equals_the_dealer": difference is None,
     }
     return {"checks": checks, "decks": decks,
@@ -639,6 +668,7 @@ def cube_compare(configs: list[dict], pins: dict, pool_doc: dict, constants_doc:
                          "episodes": sum(len(item["episodes"]) for item in expected),
                          "first_difference": difference},
             "per_segment_fields": [{k: c.get(k) for k in CUBE_PER_SEGMENT_KEYS} for c in configs],
+            "episode_runtime_profiles": cube_runtime_profiles(configs),
             "pins": pins}
 
 
@@ -664,7 +694,7 @@ def cube_main(args, parser) -> int:
         pins = check_cube_pins(docs["pins"])
         hashes = {name: sha256(data) for name, data in raw.items()}
         result = cube_compare(configs, pins, docs["pool"], docs["constants"], docs["base"], hashes, load_dealer())
-    except (ParityError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+    except (OSError, ParityError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
         print(f"error: {exc!r}", file=sys.stderr)
         return 1
     receipt = {"schema": CUBE_SCHEMA, "pass": all(result["checks"].values()), **result,

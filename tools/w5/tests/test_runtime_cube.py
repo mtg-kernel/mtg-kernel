@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
@@ -123,7 +124,7 @@ class AcceptTests(CubeCase):
             else:
                 self.assertEqual(receipt["schema"], rr.CUBE_SCHEMA)
                 expected = ["gate1.external_pins_sha256", "gate1.non_placeholder_play_import",
-                            "recipe.engine_windows"] if extra else []
+                            "gate1.model_transfer", "recipe.episode_profile", "recipe.prepared_update"] if extra else []
                 self.assertEqual(receipt["failing_requirements"], expected)
                 self.assertFalse(receipt["production"])
                 self.assertEqual(receipt["gate1_to_fill"], [f"gate1.{item}" for item in rr.GATE1_ITEMS])
@@ -149,34 +150,97 @@ class AcceptTests(CubeCase):
         self.assertEqual(code, 0, receipt and self.failed(receipt))
         self.assertEqual(receipt["per_segment_fields"][1]["output_directory"], "segment-1")
 
-    def test_gate_1_values_make_a_production_receipt(self):
+    def production_inputs(self):
         docs = copy.deepcopy(self.docs)
-        docs["base"]["card_semantics"] = {"table": {"path": "t.json", "sha256": "2" * 64}}
-        docs["base"]["initial_source"]["play_import"]["sha256"] = "3" * 64
-        for item in rr.GATE1_ITEMS:
-            docs["pins"]["gate1"][item]["fixture"] = False
-        docs["pins"]["gate1"]["card_semantics"]["value"] = docs["base"]["card_semantics"]
-        docs["pins"]["gate1"]["flatv9_play_import_sha256"]["value"] = "3" * 64
-        docs["pins"]["episode"]["priority_windows"] = ["engine-windows-v1"] * 2
+        source = docs["base"]["initial_source"]
+        source["play_import"]["sha256"] = "3" * 64
+        source["feature_transfer"] = "flat-v9-test-profile"
+        docs["base"]["collection_workers"] = 2
+        docs["base"]["preparation_workers"] = 2
+        docs["base"]["card_semantics"] = {"table_path": "t.json", "table_sha256": "2" * 64}
+        docs["base"]["iterations"] = [{"episodes": [{"episode": {
+            "opening": "london-v1", "mulligan_modes": ["learned", "learned"],
+            "max_physical_decisions": 16384, "max_policy_steps": 32768,
+        }}]}]
+        for entry in docs["pins"]["gate1"].values():
+            entry["fixture"] = False
+        for item, value in (
+            ("card_semantics", docs["base"]["card_semantics"]),
+            ("flatv9_play_import_sha256", source["play_import"]["sha256"]),
+            ("flatv9_feature_transfer", source["feature_transfer"]),
+        ):
+            docs["pins"]["gate1"][item]["value"] = value
+        docs["pins"]["episode"].update(priority_windows=["engine-windows-v1"] * 2, max_stack_objects=128)
+        return docs
+
+    def test_production_requires_native_admission_of_the_pinned_segment(self):
+        docs = self.production_inputs()
         config = rp.cube_segment_config(DEALER, docs["pool"], docs["constants"], docs["base"], docs["pins"])
         args = self.write([config], docs)
-        code, receipt = self.receipt(args, "--production", "--cube-pins-sha256",
-                                     sha((self.dir / NAMES["pins"]).read_bytes()))
-        self.assertEqual(code, 0, receipt and receipt["failing_requirements"])
-        self.assertTrue(receipt["production"])
-        self.assertEqual(receipt["gate1_to_fill"], [])
-
         trusted_digest = sha((self.dir / NAMES["pins"]).read_bytes())
+        code, receipt = self.receipt(args, "--production", "--cube-pins-sha256", trusted_digest)
+        self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.native_config_admission"]))
         config["initial_source"]["checkpoint"] = {"path": "other.json", "sha256": "4" * 64}
         code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", trusted_digest)
-        self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.segment_checkpoints"]))
-        docs["pins"]["checkpoint_sha256_by_config"] = ["4" * 64]
-        code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", trusted_digest)
-        self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.external_pins_sha256"]))
-        new_digest = sha((self.dir / NAMES["pins"]).read_bytes())
-        code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", new_digest)
-        self.assertEqual((code, receipt["failing_requirements"]), (0, []))
+        self.assertEqual(code, 1)
+        self.assertIn("raw_cube_parity", receipt["failing_requirements"])
+        self.assertIn("gate1.segment_checkpoints", receipt["failing_requirements"])
 
+    def test_native_validation_must_bind_exact_config_bytes_and_carddb(self):
+        trainer = self.dir / "pinned-trainer"
+        trainer.write_bytes(b"trainer fixture")
+        docs = self.production_inputs()
+        docs["pins"]["trainer_sha256"] = sha(trainer.read_bytes())
+        config = rp.cube_segment_config(DEALER, docs["pool"], docs["constants"], docs["base"], docs["pins"])
+        args = self.write([config], docs)
+        config_path = self.dir / "segment-0.json"
+        validation = {
+            "schema": "phase1-native-expanded-config-validation/v1",
+            "config_sha256": sha(config_path.read_bytes()),
+            "validation_scope": "config-shape-and-registered-cards-only",
+            "native_execution": False, "model_loaded": False,
+            "runtime": {"card_db_hash": docs["pool"]["kernel_carddb_hash"]},
+        }
+        production_args = ("--production", "--cube-pins-sha256", sha((self.dir / NAMES["pins"]).read_bytes()),
+                           "--cube-trainer", str(trainer))
+        command = [str(trainer.resolve()), "--validate-config", str(config_path.resolve())]
+        with patch.object(rr.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess(command, 0, json.dumps(validation), "")
+            code, receipt = self.receipt(args, *production_args)
+            self.assertEqual((code, receipt["native_config_validation"]), (0, [validation]))
+            run.assert_called_once_with(command, capture_output=True, text=True, timeout=60)
+
+            validation["config_sha256"] = "5" * 64
+            run.return_value.stdout = json.dumps(validation)
+            code, receipt = self.receipt(args, *production_args)
+            self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.native_config_admission"]))
+
+    def test_empty_colliding_and_nonresuming_splits_refuse(self):
+        whole = segment()
+        first, second = copy.deepcopy(whole), copy.deepcopy(whole)
+        first["iterations"], second["iterations"] = whole["iterations"][:1], whole["iterations"][1:]
+        second["initial_source"]["checkpoint"] = {"path": "prior.json", "sha256": "1" * 64}
+        for configs in ([dict(first, iterations=[]), whole], [first, second],
+                        [first, dict(second, output_directory="other", initial_source=first["initial_source"])]):
+            code, receipt = self.parity(self.write(configs))
+            self.assertEqual((code, self.failed(receipt)), (1, ["run_fields_equal_the_base"]))
+
+    def test_production_checks_actual_episode_profile_and_preparation_recipe(self):
+        cases = (
+            ("recipe.episode_profile", lambda docs: docs["pins"]["episode"].pop("priority_windows")),
+            ("recipe.episode_profile", lambda docs: docs["base"]["iterations"][0]["episodes"][0]["episode"].update(
+                runtime_rules="resolution-boundary-v1")),
+            ("recipe.prepared_update", lambda docs: docs["base"].update(update_backward_execution="fixed_partition_4")),
+            ("recipe.prepared_update", lambda docs: docs["base"].update(preparation_workers=1)),
+        )
+        for check, mutate in cases:
+            docs = self.production_inputs()
+            mutate(docs)
+            config = rp.cube_segment_config(DEALER, docs["pool"], docs["constants"], docs["base"], docs["pins"])
+            args = self.write([config], docs)
+            code, receipt = self.receipt(args, "--production", "--cube-pins-sha256",
+                                         sha((self.dir / NAMES["pins"]).read_bytes()))
+            self.assertEqual((code, receipt["failing_requirements"]), (1, [check]))
 
     def test_relabelled_fixtures_cannot_make_a_production_receipt(self):
         docs = copy.deepcopy(self.docs)
