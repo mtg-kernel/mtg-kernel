@@ -2195,6 +2195,39 @@ pub(crate) fn apply_chosen_permanent(
 
 /// True iff the resolving ability's source is still the incarnation that
 /// created it, on the battlefield.
+/// Kaito, Bane of Nightmares' +0: "draw a card for each opponent who lost
+/// life this turn" in two-player play.
+pub(crate) fn opponent_lost_life_this_turn(state: &GameState, ctx: &ExecCtx) -> bool {
+    state
+        .standard_v1
+        .as_ref()
+        .and_then(|s| s.life_this_turn)
+        .is_some_and(|(turn, _, lost)| {
+            turn == state.turn_key_v1() && lost[ctx.controller.opponent().index()] > 0
+        })
+}
+
+/// Braided Quipu's draw count: the artifacts `player` controls now.
+pub(crate) fn controlled_artifact_count(state: &GameState, player: PlayerId) -> u32 {
+    let artifacts = state.players[player.index()]
+        .battlefield
+        .iter()
+        .filter(|&&id| crate::engine::object_has_type(state, id, CardType::Artifact))
+        .count();
+    u32::try_from(artifacts).unwrap_or(u32::MAX)
+}
+
+/// "then put Braided Quipu into its owner's library third from the top",
+/// if it is still the same battlefield incarnation.
+pub(crate) fn put_source_third_from_top(ctx: &ExecCtx, state: &mut GameState) {
+    if source_incarnation_live(ctx, state) {
+        event::propose_and_commit(
+            state,
+            ProposedEvent::public_library_insert(ctx.source, event::LibraryPlacement::ThirdFromTop),
+        );
+    }
+}
+
 fn source_incarnation_live(ctx: &ExecCtx, state: &GameState) -> bool {
     let Some(contract) = ctx.ability_source_contract else {
         return false;
@@ -2306,14 +2339,7 @@ pub(crate) fn execute(op: &StandardOpV1, ctx: &ExecCtx, state: &mut GameState) {
             counts[ctx.controller.index()] = counts[ctx.controller.index()].saturating_add(1);
         }
         StandardOpV1::DrawIfOpponentLostLifeThisTurn => {
-            if state
-                .standard_v1
-                .as_ref()
-                .and_then(|s| s.life_this_turn)
-                .is_some_and(|(turn, _, lost)| {
-                    turn == state.turn_key_v1() && lost[ctx.controller.opponent().index()] > 0
-                })
-            {
+            if opponent_lost_life_this_turn(state, ctx) {
                 crate::effect::execute(
                     &EffectOp::DrawCards {
                         player: PlayerRef::Controller,
@@ -2604,23 +2630,10 @@ pub(crate) fn execute(op: &StandardOpV1, ctx: &ExecCtx, state: &mut GameState) {
             }
         }
         StandardOpV1::DrawPerArtifactThenSourceThirdFromTop => {
-            let artifacts = state.players[ctx.controller.index()]
-                .battlefield
-                .iter()
-                .filter(|&&id| crate::engine::object_has_type(state, id, CardType::Artifact))
-                .count();
-            for _ in 0..artifacts {
+            for _ in 0..controlled_artifact_count(state, ctx.controller) {
                 event::propose_and_commit(state, ProposedEvent::draw(ctx.controller));
             }
-            if source_incarnation_live(ctx, state) {
-                event::propose_and_commit(
-                    state,
-                    ProposedEvent::public_library_insert(
-                        ctx.source,
-                        event::LibraryPlacement::ThirdFromTop,
-                    ),
-                );
-            }
+            put_source_third_from_top(ctx, state);
         }
         StandardOpV1::ExileTopFiveMayCastOneInstantOrSorcery => {
             exile_top_five_may_cast_one(state, ctx.controller);

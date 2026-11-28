@@ -1000,6 +1000,7 @@ pub(crate) use inspiration_resolution_v1::{
 pub(crate) mod library_choice_search_v2;
 mod standard_payment_v1;
 pub mod standard_selection_v1;
+pub(crate) mod standard_staged_draws_v1;
 pub use inspiration_resolution_v1::{
     InspirationDepartureV1, InspirationInputKindV1, InspirationInputV1, InspirationOperationV1,
     InspirationResolutionReceiptV1,
@@ -8111,9 +8112,15 @@ pub(crate) fn validated_definition_owned_root_effect(
                 crate::card_def::CARD_DEFS[card_def as usize].name,
                 &root,
             );
+        // Ertai Resurrected's chosen mode resolves as its own program; stack
+        // placement already matches it against the printed modes.
+        let is_ertai_mode = crate::card_def::CARD_DEFS[card_def as usize].name
+            == "Ertai Resurrected"
+            && crate::trigger::trigger_effect_matches(card_def, &root);
         if crate::standard_creature_choices_v1::trigger_target_spec(card_def, &root).is_none()
             && !is_saga_chapter
             && !is_eternal_delayed
+            && !is_ertai_mode
             && !crate::trigger::triggers_for(card_def)
                 .iter()
                 .any(|trigger| {
@@ -8308,6 +8315,9 @@ fn leaf_staged_draw(
             )?,
             Vec::new(),
         ));
+    }
+    if standard_staged_draws_v1::draws(leaf) {
+        return standard_staged_draws_v1::leaf_draw(leaf, path, ctx, state, start);
     }
     let EffectOp::StandardV1(standard) = leaf else {
         return None;
@@ -15988,7 +15998,7 @@ fn drive_resumable_in_departure_scope_v1(
                 } => {
                     standard_payment_v1::pay_and_draw(
                         state,
-                        &continuation,
+                        &mut continuation,
                         amount,
                         &path,
                         &expected_remaining_frames,
@@ -18653,6 +18663,12 @@ fn drive_resumable_in_departure_scope_v1(
                     return Ok(ResumableProgress::Suspended);
                 }
             }
+            // Standard leaves whose draws may need a replacement choice
+            // stage them after their own effects (#926).
+            leaf if cfg!(feature = "eternal-fixtures")
+                && native_row.is_none()
+                && standard_staged_draws_v1::draws(&leaf)
+                && standard_staged_draws_v1::drive(state, &mut continuation, &leaf, &path)? => {}
             leaf => {
                 #[cfg(feature = "eternal-fixtures")]
                 if let Some((player, count)) = plain_draw_instruction(state, &leaf, &continuation.ctx)

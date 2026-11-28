@@ -90,7 +90,7 @@ pub(super) fn validate_choice(
 }
 pub(super) fn pay_and_draw(
     state: &mut GameState,
-    pending: &EffectContinuation,
+    pending: &mut EffectContinuation,
     amount: u16,
     path: &[u16],
     remaining: &[EffectFrame],
@@ -102,6 +102,10 @@ pub(super) fn pay_and_draw(
     let payment = plan(state, pending.ctx.controller, u32::from(amount))
         .ok_or("optional payment became unpayable")?;
     crate::engine::pay_plan(state, pending.ctx.controller, &payment);
+    // The completed payment fixes the count of a draw staged for replacements.
+    if super::standard_staged_draws_v1::stage_paid_draw(state, pending, amount, path) {
+        return Ok(());
+    }
     execute(
         &EffectOp::DrawCards {
             player: PlayerRef::Controller,
