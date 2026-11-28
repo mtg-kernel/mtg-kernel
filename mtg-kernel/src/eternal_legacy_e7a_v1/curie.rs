@@ -146,6 +146,43 @@ pub(crate) fn record_departure(state: &mut GameState, at: usize, departure: Depa
     );
 }
 
+/// Released Curie triggers were queued directly from combat damage and have
+/// no adjacent CurieCombat receipt. The source may since have left play.
+pub(crate) fn legacy_combat_at(
+    state: &GameState,
+    source: AbilitySourceContractV4,
+) -> Option<usize> {
+    let last_damage = state
+        .engine
+        .event_history
+        .of_kinds_v2(&[EventKindV1::CombatDamageToPlayer])
+        .filter_map(|(at, event)| {
+            let CommittedEvent::CombatDamageToPlayer {
+                source: card,
+                source_zone_change_count,
+                amount,
+                ..
+            } = event
+            else {
+                return None;
+            };
+            (*card == source.source
+                && *source_zone_change_count == source.zone_change_count
+                && *amount > 0)
+                .then_some(at)
+        })
+        .last()?;
+    combat_source(state, last_damage)
+        .is_none()
+        .then_some(last_damage)
+}
+
+pub(crate) fn legacy_draw_count(state: &GameState, ctx: &ExecCtx, fallback: u32) -> u32 {
+    super::live_ability_source(ctx, state)
+        .and_then(|source| crate::engine::effective_base_power(state, source))
+        .map_or(fallback, |power| power.max(0) as u32)
+}
+
 pub(crate) fn draw_count(state: &GameState, ctx: &ExecCtx, combat_at: usize) -> Option<u32> {
     let source = combat_source(state, combat_at)?;
     if ctx.ability_source_contract != Some(source)

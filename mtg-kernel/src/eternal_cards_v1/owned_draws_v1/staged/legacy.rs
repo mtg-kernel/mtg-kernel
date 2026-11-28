@@ -98,6 +98,23 @@ pub(crate) fn visit_attempts(
         )?;
         Some((at + 1, item.controller))
     };
+    let standstill = || {
+        use crate::effect::EffectOp;
+        use crate::eternal_cards_v1::EternalOpV1;
+        use crate::eternal_premodern_p1b_v1::P1bOpV1;
+        use crate::standard_cards_v1::StandardOpV1;
+        let Some(EffectOp::StandardV1(StandardOpV1::EternalV1(EternalOpV1::P1bV1(
+            P1bOpV1::StandstillV1 { caster },
+        )))) = item.inline_effect.as_ref()
+        else {
+            return None;
+        };
+        if !path.is_empty() {
+            return None;
+        }
+        let start = super::super::standstill::legacy_draw_start(state, &pending.ctx, end)?;
+        Some((start, caster.opponent()))
+    };
     let treasure = |row: &CommittedEvent, drawer| {
         replacement_offer
             && matches!(row, CommittedEvent::CreateToken { token_def,controller,.. }
@@ -174,6 +191,7 @@ pub(crate) fn visit_attempts(
         .or_else(inputs)
         .or_else(cast)
         .or_else(turn_draw)
+        .or_else(standstill)
         .or_else(printed)
         .or_else(stop)
     else {

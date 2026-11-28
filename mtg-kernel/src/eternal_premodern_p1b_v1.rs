@@ -494,6 +494,14 @@ fn shuffle(state: &mut GameState, player: PlayerId) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn standstill_drawer(controller: PlayerId, caster: PlayerId) -> PlayerRef {
+    if caster.opponent() == controller {
+        PlayerRef::Controller
+    } else {
+        PlayerRef::Opponent
+    }
+}
+
 /// `player` sacrifices `object` if they control it on the battlefield.
 fn sacrifice(state: &mut GameState, object: ObjectId, player: PlayerId) -> bool {
     let live = state.objects.get(object);
@@ -1255,11 +1263,13 @@ pub(crate) fn drive(
                 return Ok(false);
             }
             // "each of that player's opponents draws three cards."
-            let player = if caster.opponent() == controller {
-                PlayerRef::Controller
-            } else {
-                PlayerRef::Opponent
-            };
+            let player = standstill_drawer(controller, *caster);
+            crate::eternal_cards_v1::owned_draws_v1::staged::enter_generated(
+                state,
+                continuation,
+                &path,
+                caster.opponent(),
+            );
             push_frame(
                 continuation,
                 EffectOp::DrawCards { player, count: 3 },

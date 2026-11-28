@@ -1299,6 +1299,98 @@ fn curie_becomes_a_copy_and_draws_its_base_power_on_combat_damage() {
 }
 
 #[test]
+fn legacy_curie_combat_trigger_restores_and_orders_each_draw() {
+    let mut state = game(&["Island"; 4]);
+    let jace = put(&mut state, P0, "Jace, Wielder of Mysteries", Zone::Hand);
+    pool(&mut state, P0, &[ManaColor::U; 3], 1);
+    cast(&mut state, jace, &[]);
+    settled(&mut state);
+    let curie = put(
+        &mut state,
+        P0,
+        "Curie, Emergent Intelligence",
+        Zone::Battlefield,
+    );
+    let donor = put(&mut state, P0, "Phyrexian Dragon Engine", Zone::Battlefield);
+    pass_until(&mut state, |state| state.step == Step::DeclareAttackers);
+    act(&mut state, Action::DeclareAttackers(vec![curie]));
+    pass_until(&mut state, |state| {
+        state.stack.last().is_some_and(|row| row.source == curie)
+    });
+    assert_eq!(engine::effective_base_power(&state, curie), Some(1));
+
+    // Before eb0501f77 this very combat queued CurieDrawV1 with the base
+    // power at damage time, without a CurieCombat journal. Restore its wire
+    // shape on the stack and let priority and resolution run normally.
+    let mut save = serde_json::to_value(&state).unwrap();
+    let trigger = &mut save["stack"].as_array_mut().unwrap().last_mut().unwrap()["inline_effect"]
+        ["StandardV1"]["EternalV1"]["E7aV1"];
+    assert!(trigger.get("CurieDrawBoundV1").is_some());
+    *trigger = serde_json::json!({"CurieDrawV1": {"fallback": 1}});
+    for log in ["event_history", "event_log"] {
+        save["engine"][log].as_array_mut().unwrap().retain(|event| {
+            event["EternalOwnedDrawV1"]["journal"]
+                .get("CurieCombat")
+                .is_none()
+        });
+    }
+    let mut state: GameState = serde_json::from_value(save).unwrap();
+    // Change the live base power while the released trigger is on the stack.
+    pool(&mut state, P0, &[ManaColor::U], 1);
+    activate(&mut state, curie, 0, &[]);
+    pass_until(&mut state, |state| {
+        state.stack.len() == 1
+            && zone(state, donor) == Zone::Exile
+            && engine::effective_base_power(state, curie) == Some(2)
+    });
+    let mut departed: GameState =
+        serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+    let bounce = put(&mut departed, P0, "Echoing Truth", Zone::Hand);
+    pool(&mut departed, P0, &[ManaColor::U], 1);
+    cast(&mut departed, bounce, &[Target::Object(curie)]);
+    pass_until(&mut departed, |state| zone(state, curie) == Zone::Hand);
+    put(&mut departed, P1, "Hullbreacher", Zone::Battlefield);
+    let thug = put(&mut departed, P0, "Golgari Thug", Zone::Graveyard);
+    assert!(
+        matches!(settle(&mut departed), Some(Decision::ChooseEffectTargets { legal_targets, .. }) if legal_targets == [Target::Object(thug)])
+    );
+    act(
+        &mut departed,
+        Action::ChooseEffectTarget(Target::Object(thug)),
+    );
+    settled(&mut departed);
+    assert_eq!(zone(&departed, thug), Zone::Hand);
+    assert!(
+        named(&departed, P1, "Treasure Token").is_empty(),
+        "the fallback of one was spent on dredge"
+    );
+
+    put(&mut state, P1, "Hullbreacher", Zone::Battlefield);
+    let thug = put(&mut state, P0, "Golgari Thug", Zone::Graveyard);
+    assert!(
+        matches!(settle(&mut state), Some(Decision::ChooseEffectTargets { source, legal_targets, .. })
+        if source == curie && legal_targets == [Target::Object(thug)])
+    );
+    act(&mut state, Action::ChooseEffectTarget(Target::Object(thug)));
+    let choice = settle(&mut state).expect("second draw after dredging the last four");
+    assert_eq!(zone(&state, thug), Zone::Hand);
+    assert!(
+        matches!(&choice, Decision::ChooseEffectTargets { source, legal_targets, .. }
+        if *source == curie && legal_targets == &[Target::Object(jace)])
+    );
+    let mut win: GameState = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+    assert_eq!(next(&mut win), choice);
+    act(&mut win, Action::ChooseEffectTarget(Target::Object(jace)));
+    assert!(matches!(
+        next(&mut win),
+        Decision::GameOver { winner: Some(P0) }
+    ));
+    act(&mut state, Action::FinishEffectSelection);
+    settled(&mut state);
+    assert_eq!(named(&state, P1, "Treasure Token").len(), 1);
+}
+
+#[test]
 fn curie_draw_uses_departure_base_power_and_replacement_attempts_both_seats() {
     use mtg_kernel::event::CommittedEvent;
     use mtg_kernel::state::StackItemKind;
