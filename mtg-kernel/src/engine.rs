@@ -16776,6 +16776,10 @@ pub(crate) fn legal_blockers_for(state: &GameState, attacker: ObjectId) -> Vec<O
 }
 
 fn check_game_over(state: &GameState) -> Option<Decision> {
+    // 104.4b: a mandatory loop no player can break made the game a draw.
+    if state.mandatory_loop_draw_v1.is_some() {
+        return Some(Decision::GameOver { winner: None });
+    }
     match (state.players[0].has_lost, state.players[1].has_lost) {
         (false, false) => None,
         (true, false) => Some(Decision::GameOver {
@@ -16842,6 +16846,12 @@ fn native_validation_stage<T, E>(_stage: &'static str, result: Result<T, E>) -> 
 /// historical transition.
 pub fn advance_until_decision(state: &mut GameState) -> Decision {
     use crate::full_text_v1::{donor_refusal_at, DonorCheckSiteV1};
+
+    // A game drawn by a mandatory loop (104.4b) is over: no automatic work
+    // runs and only its terminal is reported again.
+    if state.mandatory_loop_draw_v1.is_some() {
+        return Decision::GameOver { winner: None };
+    }
 
     // Backstop for the Shapeshifter donor refusal: no automatic work runs
     // while an unsupported donor is in place, whatever path changed the top.
@@ -31068,6 +31078,9 @@ fn action_matches_pending_activation_stage(
 /// `advance_until_decision`. Returns `Err` for an action that isn't
 /// currently legal (caller bug); never silently no-ops.
 pub fn step(state: &mut GameState, action: Action) -> Result<(), String> {
+    if state.mandatory_loop_draw_v1.is_some() {
+        return Err("the game is over: a mandatory loop made it a draw (rule 104.4b)".into());
+    }
     // Restored trigger placement state, before any route can mutate.
     waiting_placement_v1::validate_for_step(state)?;
     validate_trigger_placement_group(state)?;

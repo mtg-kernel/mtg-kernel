@@ -866,6 +866,12 @@ mod flat_action_v4;
 mod flat_action_v5;
 pub(crate) mod heartfire_history_v1;
 pub(crate) mod heartfire_v12;
+#[cfg(all(
+    test,
+    feature = "limited-fdn-fixtures",
+    not(feature = "standard-magezero-fixtures")
+))]
+mod mandatory_loop_v1_tests;
 pub(crate) mod raid_entry_v21;
 mod raid_v9;
 mod soul_shackled_zombie_v13;

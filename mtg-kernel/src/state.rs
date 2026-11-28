@@ -2741,6 +2741,13 @@ pub struct GameState {
     pub(crate) etali_commit_receipts_v1: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) thousand_year_storm_consumer_v1: bool,
+    /// Rules 104.4b and 731.4: the game entered a loop of mandatory actions
+    /// that no player could break, so it is a draw. Set only by
+    /// `mandatory_loop_v1` on a terminal state; absent in every other state,
+    /// whose bytes and hashes are unchanged. Once set, the engine reports
+    /// `Decision::GameOver { winner: None }` for this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mandatory_loop_draw_v1: Option<crate::mandatory_loop_v1::MandatoryLoopDrawV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3075,6 +3082,10 @@ impl Hash for GameState {
         if self.fiend_artisan_receipts_v1 {
             "fiend-artisan-receipts/v1".hash(state);
         }
+        if let Some(draw) = &self.mandatory_loop_draw_v1 {
+            "mandatory-loop-draw/v1".hash(state);
+            draw.hash(state);
+        }
     }
 }
 
@@ -3329,6 +3340,7 @@ impl GameState {
             fiend_artisan_receipts_v1: false,
             etali_commit_receipts_v1: false,
             thousand_year_storm_consumer_v1: false,
+            mandatory_loop_draw_v1: None,
         };
         crate::life_gain_turn_v1::initialize_for_pool(&mut state);
         crate::life_loss_turn_v1::initialize_for_catalog(&mut state);

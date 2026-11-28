@@ -1149,6 +1149,11 @@ impl HarnessSurfaceV2 {
         max_stack_objects: Option<u32>,
     ) -> SurfaceDecision {
         self.engine_window = None;
+        // Every pass through this loop after the first follows a transition
+        // this surface made itself, with no player choice. A position that
+        // repeats among them is a mandatory loop (104.4b): a draw. See
+        // `mandatory_loop_v1`.
+        let mut forced_loop = crate::mandatory_loop_v1::ForcedLoopDetectorV1::default();
         'decisions: loop {
             if let Some(sd) = self.next_blockers_subdecision(state) {
                 return sd;
@@ -1158,6 +1163,12 @@ impl HarnessSurfaceV2 {
             }
             if let Some(sd) = self.next_optional_cost_subdecision() {
                 return sd;
+            }
+            if state.mandatory_loop_draw_v1.is_none() && state.engine.halted.is_none() {
+                if let Some(draw) = forced_loop.observe(state, || self.public_context()) {
+                    state.mandatory_loop_draw_v1 = Some(draw);
+                    return SurfaceDecision::Decision(Decision::GameOver { winner: None });
+                }
             }
 
             let before = self.suppression_state_hash(state);

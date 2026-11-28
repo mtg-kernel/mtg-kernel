@@ -60,10 +60,44 @@ impl fmt::Display for ObjectId {
 /// changes whenever the same physical source is cast or activated again.
 /// Zero is reserved for legacy/default-constructed test state; engine-created
 /// stack items always receive a positive, monotonically increasing value.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct StackItemId(pub u64);
+
+thread_local! {
+    static STACK_ITEM_ID_HASH_BASE_V1: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Without a [`StackItemIdAgeHashV1`] guard this is exactly the derived
+/// `Hash` (the bare `u64`), so every existing state hash is unchanged.
+impl std::hash::Hash for StackItemId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let base = STACK_ITEM_ID_HASH_BASE_V1.with(std::cell::Cell::get);
+        self.0.wrapping_sub(base).hash(state);
+    }
+}
+
+/// While alive on this thread, every [`StackItemId`] hashes as its offset
+/// from `base` (the stack-item allocator), not its absolute value, so two
+/// positions whose stack incarnations differ only by when they were
+/// allocated hash alike (the mandatory loop check, `mandatory_loop_v1`).
+/// Equality is unaffected. Only state hashing may run under the guard: a
+/// hashed collection keyed by `StackItemId` must not be used while it lives.
+pub(crate) struct StackItemIdAgeHashV1 {
+    previous: u64,
+}
+
+impl StackItemIdAgeHashV1 {
+    pub(crate) fn begin(base: u64) -> Self {
+        let previous = STACK_ITEM_ID_HASH_BASE_V1.with(|cell| cell.replace(base));
+        Self { previous }
+    }
+}
+
+impl Drop for StackItemIdAgeHashV1 {
+    fn drop(&mut self) {
+        STACK_ITEM_ID_HASH_BASE_V1.with(|cell| cell.set(self.previous));
+    }
+}
 
 impl fmt::Display for StackItemId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
