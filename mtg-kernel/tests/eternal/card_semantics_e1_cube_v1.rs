@@ -275,10 +275,28 @@ fn scales_and_row_check_refuse_what_the_reader_refuses() {
             "row check accepts mutation {k}"
         );
     }
-    let bytes = serde_json::to_vec(&base).unwrap();
-    std::fs::remove_dir_all(&root).unwrap();
+    let mut bytes = serde_json::to_vec(&base).unwrap();
     assert!(scales_v1(&bytes).is_ok());
     assert_eq!(missing_rows_v1(&bytes, &ids).unwrap(), Vec::<u16>::new());
+
+    // Trailing whitespace keeps the table valid JSON while exceeding the reader's cap.
+    bytes.resize(64 * 1024 * 1024 + 1, b' ');
+    let path = root.join("table-oversize.json");
+    std::fs::write(&path, &bytes).unwrap();
+    let config = CardSemanticsConfigV1 {
+        table_path: path,
+        table_sha256: sha256(&bytes),
+    };
+    assert!(
+        reader_binding_v1(&config).is_err(),
+        "reader accepts oversize"
+    );
+    assert!(scales_v1(&bytes).is_err(), "scales accept oversize");
+    assert!(
+        missing_rows_v1(&bytes, &ids).is_err(),
+        "row check accepts oversize"
+    );
+    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]

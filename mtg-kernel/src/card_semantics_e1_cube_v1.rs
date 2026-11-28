@@ -22,6 +22,7 @@
 //!   Gate 1 receipt requires this list to be empty.
 
 pub use crate::native_policy_train_step_v1::card_projection_e1::CardSemanticsConfigV1;
+use crate::native_policy_train_step_v1::card_projection_e1::TABLE_MAX_BYTES_V1;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -89,12 +90,15 @@ struct TableRowV1 {
 }
 
 /// Parses `table_bytes` and applies every check the arm E reader applies
-/// (`card_projection_e1`): schema, compiled card database hash, a vector
+/// (`card_projection_e1`): size, schema, compiled card database hash, a vector
 /// width of 1 to 65,536, a non-empty row list matching `card_count`, every
 /// card id below the card vocabulary, no duplicate id, every row of the
 /// declared width and every integer exact in f32. Returns the parsed table
 /// and the row span (largest id plus one).
 fn parse_checked_v1(table_bytes: &[u8]) -> Result<(TableRowsV1, usize), String> {
+    if table_bytes.len() as u64 > TABLE_MAX_BYTES_V1 {
+        return Err("card semantics table exceeds 64 MiB".into());
+    }
     let table: TableRowsV1 = serde_json::from_slice(table_bytes).map_err(|e| e.to_string())?;
     if table.schema != "card_semantics_table/v1"
         || table.kernel_carddb_hash != format!("{:016x}", crate::card_def::KERNEL_CARDDB_HASH)

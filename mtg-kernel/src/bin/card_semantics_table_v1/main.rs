@@ -657,7 +657,8 @@ fn run_args(repo: &Path, args: &[String]) -> Result<(), String> {
         return match cli.mode {
             Mode::Write => regenerate_cube(repo),
             Mode::Check => {
-                let (report, failures) = check_cube(repo)?;
+                let (report, failures) =
+                    with_writer_lock(repo, table::CUBE_TABLE_PATH, || check_cube(repo))?;
                 print!("{report}");
                 require_checks(&failures)?;
                 println!("card semantics table v1 (cube): all checks passed");
@@ -1576,6 +1577,20 @@ mod tests {
             );
             assert_eq!(staged(&temp, table::TABLE_PATH), [LOCK_FILE]);
         }
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[cfg(feature = "eternal-fixtures")]
+    #[test]
+    fn cube_check_refuses_a_busy_publication_lock() {
+        let temp = scratch_repo("cube-check-locked");
+        let (_, lock) = open_writer_lock(&temp, table::CUBE_TABLE_PATH).unwrap();
+        lock.try_lock().unwrap();
+
+        let error = run_args(&temp, &args(&["--cube", "--check"])).unwrap_err();
+        assert!(error.contains("cannot lock"), "{error}");
+
+        drop(lock);
         std::fs::remove_dir_all(temp).unwrap();
     }
 
