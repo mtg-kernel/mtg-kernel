@@ -1,5 +1,5 @@
 {
- "note": "Seconds per plan unit of eternal_integration on hosted Linux runners, measured in the eight parts of run 45478368582 (2026-11-24, the first run in parts; each part ran on its own runner, some on the slower of the two hosted processors and some on the faster). A unit's time runs from its 'Running integration module' line to the next one, or to the part's inventory line. The two tests under 'isolated' are units of their own. Entries added on main since that run (cube_b_census_v1, cube_deck_signal_v1, cube_draft_build_v1, cube_pod_runner_v1, cube_training_driver_v1, eternal_premodern_p3i_v1) keep their estimates until a hosted timing in parts is recorded.",
+ "note": "Seconds per plan unit of eternal_integration on hosted Linux runners, measured in the eight parts of run 45478368582 (2026-11-24, the first run in parts; each part ran on its own runner, some on the slower of the two hosted processors and some on the faster). A unit's time runs from its 'Running integration module' line to the next one, or to the part's inventory line. The two tests under 'isolated' are units of their own. Entries added on main since that run (cube_b_census_v1, cube_deck_signal_v1, cube_draft_build_v1, cube_pod_runner_v1, cube_training_driver_v1, eternal_phasing_v1, eternal_premodern_p3i_v1) keep their estimates until a hosted timing in parts is recorded.",
  "eternal_integration": {
   "bonder_owned_draws_v1": 1,
   "cube_b_census_v1": 60,
@@ -63,6 +63,7 @@
   "eternal_pauper_pf2a_v1": 107,
   "eternal_pauper_pf2b_v1": 120,
   "eternal_pauper_pf2c_v1": 90,
+  "eternal_phasing_v1": 30,
   "eternal_premodern_p1a_v1": 1,
   "eternal_premodern_p1b_v1": 1,
   "eternal_premodern_p2a_v1": 1,

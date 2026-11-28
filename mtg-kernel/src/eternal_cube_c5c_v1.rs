@@ -144,6 +144,16 @@ fn link_live_in(state: &GameState, link: ObjectLinkV4, zone: Zone) -> bool {
         .is_some_and(|live| live.zone == zone && live.zone_change_count == link.zone_change_count)
 }
 
+/// `link` is still its battlefield incarnation, on the battlefield or phased
+/// out (702.26d: phasing is not a zone change).
+fn link_on_battlefield_or_phased_out(state: &GameState, link: ObjectLinkV4) -> bool {
+    link_live_in(state, link, Zone::Battlefield)
+        || state.objects.try_get(link.object).is_some_and(|live| {
+            live.zone_change_count == link.zone_change_count
+                && crate::state::object_is_phased_out(state, link.object)
+        })
+}
+
 fn bind(state: &GameState, object: ObjectId) -> EffectObjectBinding {
     let live = state.objects.get(object);
     EffectObjectBinding {
@@ -426,7 +436,9 @@ pub(crate) fn begin_cleanup(state: &mut GameState) {
     }
     let copies = std::mem::take(&mut c5c_state(state).woodland_copies);
     for link in copies {
-        if link_live_in(state, link, Zone::Battlefield) {
+        // A phased-out Woodland's copy effect still ends (702.26e): it
+        // phases in as its own card.
+        if link_on_battlefield_or_phased_out(state, link) {
             crate::eternal_legacy_e7a_v1::end_copy_before_departure(state, link.object);
         }
     }
@@ -573,15 +585,15 @@ fn prune(state: &mut GameState) {
         .iter()
         .copied()
         .filter(|&(aura, creature)| {
-            link_live_in(state, aura, Zone::Battlefield)
-                || creature.is_some_and(|link| link_live_in(state, link, Zone::Battlefield))
+            link_on_battlefield_or_phased_out(state, aura)
+                || creature.is_some_and(|link| link_on_battlefield_or_phased_out(state, link))
         })
         .collect::<Vec<_>>();
     let woodland_copies = c5c
         .woodland_copies
         .iter()
         .copied()
-        .filter(|&link| link_live_in(state, link, Zone::Battlefield))
+        .filter(|&link| link_on_battlefield_or_phased_out(state, link))
         .collect::<Vec<_>>();
     let c5c = c5c_state(state);
     c5c.buybacks = buybacks;

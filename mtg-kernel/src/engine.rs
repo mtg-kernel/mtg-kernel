@@ -4380,7 +4380,8 @@ fn historical_ability_source_contract(
     if !source_card_def_matches(state, contract, live.card_def)
         || contract.owner != live.owner
         || live.zone_change_count < contract.zone_change_count
-        || (live.zone_change_count == contract.zone_change_count && live.zone != contract.zone)
+        || (live.zone_change_count == contract.zone_change_count
+            && !crate::state::incarnation_zone_holds(state, contract.source, contract.zone))
     {
         return Err("ability source contract is structurally inconsistent".to_string());
     }
@@ -4985,7 +4986,10 @@ fn validate_ability_source_contract(
         || contract.controller != item.controller
         || (contract.zone == Zone::Stack && !ceased_copy_trigger_source(state, item, contract))
         || source.zone_change_count < contract.zone_change_count
-        || (source.zone_change_count == contract.zone_change_count && source.zone != contract.zone)
+        // A source that phased out keeps its battlefield incarnation
+        // (702.26d); the ability resolves without it (113.7a).
+        || (source.zone_change_count == contract.zone_change_count
+            && !crate::state::incarnation_zone_holds(state, item.source, contract.zone))
     {
         return Err("ability source contract is structurally malformed".to_string());
     }

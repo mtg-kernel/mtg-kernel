@@ -9710,7 +9710,9 @@ fn take_initiative(
         || !crate::engine::source_card_def_matches(state, source, live.card_def)
         || live.owner != source.owner
         || live.zone_change_count < source.zone_change_count
-        || (live.zone_change_count == source.zone_change_count && live.zone != source.zone)
+        // A source that phased out has not left the battlefield (702.26d).
+        || (live.zone_change_count == source.zone_change_count
+            && !crate::state::incarnation_zone_holds(state, source.source, source.zone))
         || crate::card_def::CARD_DEFS
             .get(source.card_def as usize)
             .is_none_or(|definition| {
@@ -16106,10 +16108,17 @@ fn drive_resumable_in_departure_scope_v1(
                         );
                     }
                     continuation.answered_choice_guard = None;
+                    // A source that phased out has not left the battlefield
+                    // (702.26d): the card is exiled until it does, linked to
+                    // it.
                     let source_incarnation_is_live =
                         state.objects.try_get(source.source).is_some_and(|live| {
-                            live.zone == source.zone
-                                && live.zone_change_count == source.zone_change_count
+                            live.zone_change_count == source.zone_change_count
+                                && crate::state::incarnation_zone_holds(
+                                    state,
+                                    source.source,
+                                    source.zone,
+                                )
                         });
                     if !source_incarnation_is_live
                         && linked_hand_exile_kind(source.card_def)
@@ -19038,9 +19047,13 @@ impl ExecCtx {
                                     *zone_change_count,
                                     *card_def,
                                 ));
+                        // A target that phased out keeps its incarnation
+                        // but is treated as though it does not exist: it
+                        // is illegal while phased out (702.26b).
                         same_definition
                             && live.owner == *owner
                             && live.zone_change_count == *zone_change_count
+                            && !crate::state::object_is_phased_out(state, *object)
                     })
             }
             _ => false,
@@ -26299,8 +26312,10 @@ fn execute_in_departure_scope_v1(
                             source_contract.card_def,
                         )))
                     && source.owner == source_contract.owner
-                    && source.zone == Zone::Battlefield
                     && source.zone_change_count == source_contract.zone_change_count
+                    // A source that phased out has not left the battlefield
+                    // (702.26d): the exile is linked to it.
+                    && crate::state::incarnation_zone_holds(state, ctx.source, Zone::Battlefield)
             });
             let until_leaves = battlefield_exile_until_source_leaves(source_contract.card_def);
             if until_leaves && !source_is_live {
@@ -26361,8 +26376,12 @@ fn execute_in_departure_scope_v1(
                 if crate::card_def::CARD_DEFS[source_contract.card_def as usize].name
                     == "Banishing Light"
                     && state.objects.try_get(ctx.source).is_none_or(|live| {
-                        live.zone != Zone::Battlefield
-                            || live.zone_change_count != source_contract.zone_change_count
+                        live.zone_change_count != source_contract.zone_change_count
+                            || !crate::state::incarnation_zone_holds(
+                                state,
+                                ctx.source,
+                                Zone::Battlefield,
+                            )
                     })
                 {
                     // A transferred source can itself be a legal opponent permanent.
