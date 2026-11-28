@@ -426,13 +426,14 @@ fn prune(state: &mut GameState) {
         .nissa_animated_lands
         .iter()
         .copied()
-        .filter(|record| link_live_in(state, record.land, Zone::Battlefield))
+        // A phased-out land or creature keeps these effects (702.26d).
+        .filter(|record| crate::state::battlefield_incarnation_holds(state, record.land))
         .collect();
     let live_haste: Vec<(ObjectLinkV4, u64)> = c9c
         .breach_haste
         .iter()
         .copied()
-        .filter(|(link, _)| link_live_in(state, *link, Zone::Battlefield))
+        .filter(|(link, _)| crate::state::battlefield_incarnation_holds(state, *link))
         .collect();
     if let Some(eternal) = state.eternal_v1.as_mut() {
         eternal.c9c.nissa_animated_lands = live_nissa;

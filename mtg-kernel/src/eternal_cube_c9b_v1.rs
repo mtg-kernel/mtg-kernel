@@ -1573,7 +1573,8 @@ pub(crate) fn begin_turn(state: &mut GameState, _player: PlayerId) {
             c9b.figure_forms
                 .iter()
                 .copied()
-                .filter(|form| link_live_in(state, form.host, Zone::Battlefield))
+                // Phasing is not leaving the battlefield (702.26d).
+                .filter(|form| crate::state::battlefield_incarnation_holds(state, form.host))
                 .collect()
         })
         .unwrap_or_default();
@@ -1582,7 +1583,7 @@ pub(crate) fn begin_turn(state: &mut GameState, _player: PlayerId) {
             c9b.level_counters
                 .iter()
                 .copied()
-                .filter(|(link, _)| link_live_in(state, *link, Zone::Battlefield))
+                .filter(|(link, _)| crate::state::battlefield_incarnation_holds(state, *link))
                 .collect()
         })
         .unwrap_or_default();
@@ -1600,7 +1601,7 @@ pub(crate) fn begin_turn(state: &mut GameState, _player: PlayerId) {
             c9b.serra_granted_dies
                 .iter()
                 .copied()
-                .filter(|entry| link_live_in(state, entry.permanent, Zone::Battlefield))
+                .filter(|entry| crate::state::battlefield_incarnation_holds(state, entry.permanent))
                 .collect()
         })
         .unwrap_or_default();

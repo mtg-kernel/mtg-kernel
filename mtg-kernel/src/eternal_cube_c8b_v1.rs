@@ -1198,7 +1198,9 @@ pub(crate) fn begin_cleanup(state: &mut GameState) {
     }
     let copies = std::mem::take(&mut c8b_state(state).saheeli_copies);
     for saved in copies {
-        if !link_live_in(state, saved.host, Zone::Battlefield) {
+        // A phased-out host's copy still ends (702.26e): it phases in as
+        // itself.
+        if !crate::state::battlefield_incarnation_holds(state, saved.host) {
             continue;
         }
         let obj = state.objects.get_mut(saved.host.object);

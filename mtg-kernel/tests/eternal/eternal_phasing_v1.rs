@@ -110,6 +110,9 @@ fn routine(decision: Decision) -> Action {
         }
         Decision::DeclareAttackers { .. } => Action::DeclareAttackers(Vec::new()),
         Decision::DeclareBlockers { .. } => Action::DeclareBlockers(Vec::new()),
+        Decision::ChooseEffectTargets {
+            can_finish: true, ..
+        } => Action::FinishEffectSelection,
         Decision::Discard { count, choices, .. } => {
             Action::Discard(choices.into_iter().take(count as usize).collect())
         }
@@ -574,5 +577,63 @@ fn shifting_woodland_copy_ends_at_cleanup_while_phased_out() {
     assert_eq!(
         state.objects.get(woodland).card_def,
         id("Shifting Woodland")
+    );
+}
+
+/// Census stop `InvalidEffectContinuation` with Animate Dead: the reanimated
+/// creature phases out and takes Animate Dead with it (702.26g). Both phase
+/// in together, and Animate Dead's link to the creature survived: when Animate
+/// Dead later leaves, the creature is sacrificed.
+#[test]
+fn animate_dead_phases_out_with_its_creature_and_keeps_its_link() {
+    let mut state = game(true);
+    let corpse = put(&mut state, P0, "Glaring Fleshraker", Zone::Graveyard);
+    let animate = put(&mut state, P0, "Animate Dead", Zone::Hand);
+    pool(&mut state, P0, &[ManaColor::B], 1);
+    act(&mut state, Action::CastSpell(animate));
+    for _ in 0..60 {
+        match next(&mut state) {
+            Decision::ChooseTargets { legal_targets, .. } => {
+                assert!(legal_targets.contains(&Target::Object(corpse)));
+                act(&mut state, Action::ChooseTarget(Target::Object(corpse)));
+            }
+            Decision::CastSpellOrPass { .. }
+                if state.stack.is_empty()
+                    && state.engine.pending_triggers.is_empty()
+                    && state.objects.get(corpse).zone == Zone::Battlefield =>
+            {
+                break
+            }
+            decision => act(&mut state, routine(decision)),
+        }
+    }
+    assert_eq!(state.objects.get(corpse).zone, Zone::Battlefield);
+    assert_eq!(state.objects.get(corpse).attachments, vec![animate]);
+
+    phase_out_with_gates(&mut state, P0, corpse);
+    assert!(phased_out(&state, animate), "phased out indirectly");
+    settle(&mut state);
+    let observation = public_view(&state);
+    let record = phased_out_record(&observation);
+    assert_eq!(record.len(), 2);
+    assert_eq!(
+        record[1]["phased_out_with"],
+        battlefield_ref(&state, corpse)
+    );
+
+    to_main_of(&mut state, P1);
+    to_main_of(&mut state, P0);
+    assert_eq!(state.objects.get(corpse).zone, Zone::Battlefield);
+    assert_eq!(state.objects.get(animate).zone, Zone::Battlefield);
+    assert_eq!(state.objects.get(corpse).attachments, vec![animate]);
+    propose_and_commit(
+        &mut state,
+        ProposedEvent::zone_change(animate, Zone::Graveyard),
+    );
+    settle(&mut state);
+    assert_eq!(
+        state.objects.get(corpse).zone,
+        Zone::Graveyard,
+        "sacrificed when Animate Dead leaves"
     );
 }

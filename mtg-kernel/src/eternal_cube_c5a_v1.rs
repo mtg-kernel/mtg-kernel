@@ -477,8 +477,10 @@ fn curator_exile_effect(ctx: &ExecCtx, state: &mut GameState) {
     let mut records: Vec<(ObjectLinkV4, ObjectLinkV4)> = read_state(state)
         .map(|c5a| c5a.curator_exiles.clone())
         .unwrap_or_default();
+    // A phased-out Curator keeps the cards exiled with it (702.26d).
     records.retain(|(source, card)| {
-        link_live_in(state, *source, Zone::Battlefield) && link_live_in(state, *card, Zone::Exile)
+        crate::state::battlefield_incarnation_holds(state, *source)
+            && link_live_in(state, *card, Zone::Exile)
     });
     records.push((curator, exiled));
     c5a_state(state).curator_exiles = records;
@@ -516,7 +518,7 @@ fn monstrosity_effect(ctx: &ExecCtx, state: &mut GameState) {
     if monstrous.contains(&me) {
         return;
     }
-    monstrous.retain(|record| link_live_in(state, *record, Zone::Battlefield));
+    monstrous.retain(|record| crate::state::battlefield_incarnation_holds(state, *record));
     monstrous.push(me);
     c5a_state(state).monstrous = monstrous;
     let _ = event::add_plus_one_counters(state, source, ctx.controller, 4);

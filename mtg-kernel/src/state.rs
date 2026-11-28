@@ -1357,6 +1357,17 @@ pub fn incarnation_zone_holds(state: &GameState, object: ObjectId, recorded: Zon
     })
 }
 
+/// Whether `link` still names its battlefield incarnation: on the
+/// battlefield, or phased out (702.26d). Records an effect keeps about a
+/// permanent survive while it is phased out and apply again when it phases
+/// in, unless their duration is "for as long as" (702.26e).
+pub fn battlefield_incarnation_holds(state: &GameState, link: ObjectLinkV4) -> bool {
+    state.objects.try_get(link.object).is_some_and(|live| {
+        live.zone_change_count == link.zone_change_count
+            && incarnation_zone_holds(state, link.object, Zone::Battlefield)
+    })
+}
+
 /// Validates immutable target provenance without asking whether the target is
 /// still legal now. A later incarnation is an ordinary stale target and may
 /// fizzle; a contract from the future, an impossible announcement zone, or a

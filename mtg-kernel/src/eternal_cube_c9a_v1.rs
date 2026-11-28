@@ -1220,7 +1220,8 @@ fn prune(state: &mut GameState) {
     let keep_earthbent: Vec<bool> = c9a
         .earthbent_lands
         .iter()
-        .map(|entry| link_live_in(state, entry.land, Zone::Battlefield))
+        // A phased-out earthbent land is still that creature (702.26d).
+        .map(|entry| crate::state::battlefield_incarnation_holds(state, entry.land))
         .collect();
     let keep_pending_batroc: Vec<bool> = c9a
         .pending_batroc_kicks

@@ -2518,7 +2518,8 @@ fn prune(state: &mut GameState) {
         .illusions
         .iter()
         .copied()
-        .filter(|(token, _)| link_live_in(state, *token, Zone::Battlefield))
+        // A phased-out Illusion token keeps its size (702.26d).
+        .filter(|(token, _)| crate::state::battlefield_incarnation_holds(state, *token))
         .collect::<Vec<_>>();
     let cloak_exiles = e8a
         .cloak_exiles
@@ -2530,7 +2531,7 @@ fn prune(state: &mut GameState) {
         .wish_counters
         .iter()
         .copied()
-        .filter(|(host, _)| link_live_in(state, *host, Zone::Battlefield))
+        .filter(|(host, _)| crate::state::battlefield_incarnation_holds(state, *host))
         .collect::<Vec<_>>();
     let rain_lands = e8a
         .rain_lands
@@ -2570,7 +2571,7 @@ pub(crate) fn begin_turn(state: &mut GameState, player: PlayerId) {
     let stale = e8a
         .skyclave_exiles
         .iter()
-        .any(|(host, _, _)| !link_live_in(state, *host, Zone::Battlefield));
+        .any(|(host, _, _)| !crate::state::battlefield_incarnation_holds(state, *host));
     if !stale && !e8a.sorcery_flash.contains(&player) {
         return;
     }
@@ -2578,7 +2579,8 @@ pub(crate) fn begin_turn(state: &mut GameState, player: PlayerId) {
         .skyclave_exiles
         .iter()
         .copied()
-        .filter(|(host, _, _)| link_live_in(state, *host, Zone::Battlefield))
+        // A phased-out Apparition has not left the battlefield (702.26d).
+        .filter(|(host, _, _)| crate::state::battlefield_incarnation_holds(state, *host))
         .collect::<Vec<_>>();
     let e8a = e8a_state(state);
     e8a.skyclave_exiles = kept;
