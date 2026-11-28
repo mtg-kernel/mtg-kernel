@@ -1113,10 +1113,11 @@ impl FastActorSessionV1 {
                 .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
             let semantic =
                 frozen_pending_trigger_semantic_v4(&self.state, candidate.semantic.clone());
-            let core = flat_action_core_and_refs_v1(
+            let core = flat_action_core_and_refs_mode_v1(
                 &semantic,
                 actor,
                 ref_start,
+                self.is_cube_v1(),
                 |role, order_index, associated_order, reference| {
                     let position = u32::from(order_index);
                     let (object, position_sensitive) =
@@ -1370,10 +1371,11 @@ impl FastActorSessionV1 {
             let semantic =
                 frozen_pending_trigger_semantic_v4(&self.state, candidate.semantic.clone());
             let mut failed = None;
-            let core = flat_action_core_and_refs_v1(
+            let core = flat_action_core_and_refs_mode_v1(
                 &semantic,
                 actor,
                 0,
+                self.is_cube_v1(),
                 |role, order_index, _, reference| {
                     flat_visible_action_object_extension_aware_v4(
                         &self.state,
@@ -2344,6 +2346,353 @@ mod tests {
                     .map(|id| id.0)
                     .collect();
                 assert_eq!(pile, picks);
+            }
+        }
+
+        /// Scores the session's decision and fills the FlatV7 tensors the
+        /// Cube trainer consumes. The in-game V7 fill must equal both V4
+        /// fills (the scratch tensorizer and the allocating one the stack
+        /// scorer uses).
+        fn v7_tensors(
+            session: &FastActorSessionV1,
+        ) -> Result<
+            crate::native_flat_tensorizer_v2::NativeFlatDecisionTensorV2,
+            crate::native_flat_tensorizer_v2::NativeFlatTensorErrorV2,
+        > {
+            v7_tensors_edited(session, |_| {})
+        }
+
+        /// [`v7_tensors`] after `edit` rewrites the scored action rows.
+        fn v7_tensors_edited(
+            session: &FastActorSessionV1,
+            edit: impl FnOnce(&mut [FlatScorerActionCoreV2]),
+        ) -> Result<
+            crate::native_flat_tensorizer_v2::NativeFlatDecisionTensorV2,
+            crate::native_flat_tensorizer_v2::NativeFlatTensorErrorV2,
+        > {
+            let mut rows = CubeScoringRows::default();
+            let decision = session
+                .encode_current_flat_scoring_decision_owned_v4(
+                    expected(session),
+                    &mut FlatDecisionEncoderV4::default(),
+                    &mut rows.buffers(),
+                )
+                .unwrap();
+            assert_eq!(
+                decision.extensions.cube_flat_action_v1,
+                session.is_cube_v1()
+            );
+            edit(&mut rows.actions);
+            let view = crate::flat_policy_v4::FlatScoringDecisionViewV4::new(
+                crate::flat_policy_v2::FlatScoringDecisionViewV2::new(
+                    &decision.globals,
+                    &rows.objects,
+                    &rows.relations,
+                    &rows.object_subtypes,
+                    &rows.ability_uses,
+                    &rows.goads,
+                    &rows.completed_dungeons,
+                    &rows.effect_subtype_changes,
+                    &rows.context_path_elements,
+                    &rows.actions,
+                    &rows.action_refs,
+                ),
+                &decision.extensions,
+            );
+            let mut tensors =
+                crate::native_flat_tensorizer_v2::NativeFlatDecisionTensorV2::default();
+            let v7 = crate::native_flat_tensorizer_v7::NativeFlatTensorizerV7::default()
+                .fill(view, &mut tensors);
+            let allocating =
+                crate::native_flat_tensorizer_v2::fill_native_flat_decision_tensors_v4(view);
+            let mut scratch_v4 =
+                crate::native_flat_tensorizer_v4::NativeFlatDecisionTensorV4::default();
+            let scratch = crate::native_flat_tensorizer_v4::NativeFlatTensorizerV4::default()
+                .fill(view, &mut scratch_v4);
+            assert_eq!(
+                v7.is_ok(),
+                allocating.is_ok(),
+                "V7 and allocating V4 fills disagree"
+            );
+            assert_eq!(
+                v7.is_ok(),
+                scratch.is_ok(),
+                "V7 and scratch V4 fills disagree"
+            );
+            v7?;
+            assert_eq!(allocating.unwrap(), tensors);
+            assert_eq!(scratch_v4.common, tensors);
+            Ok(tensors)
+        }
+
+        /// Passes and answers with the first legal choice until `stop`
+        /// accepts the engine's next decision.
+        fn drive_until(
+            state: &mut GameState,
+            mut stop: impl FnMut(&crate::engine::Decision) -> bool,
+        ) -> crate::engine::Decision {
+            use crate::engine::{advance_until_decision, step, Action, CastMode, Decision};
+            for _ in 0..64 {
+                let decision = advance_until_decision(state);
+                if stop(&decision) {
+                    return decision;
+                }
+                let action = match decision {
+                    Decision::CastSpellOrPass { .. } => Action::Pass,
+                    Decision::ChooseCastMode { options, .. } => Action::ChooseCastMode(
+                        *options
+                            .iter()
+                            .find(|mode| **mode == CastMode::Alternative)
+                            .unwrap_or(&options[0]),
+                    ),
+                    Decision::ChooseTargets { legal_targets, .. } => {
+                        Action::ChooseTarget(legal_targets[0])
+                    }
+                    Decision::ChooseEffectTargets { legal_targets, .. } => {
+                        Action::ChooseEffectTarget(legal_targets[0])
+                    }
+                    other => panic!("fixture reached {other:?}"),
+                };
+                step(state, action).unwrap();
+            }
+            panic!("fixture never reached its decision");
+        }
+
+        /// Mox Diamond enters with no land card in its controller's hand: its
+        /// entry choice has the single option "put it into the graveyard".
+        fn lone_mox_diamond_state(actor: PlayerId) -> (GameState, crate::ids::ObjectId) {
+            let mut state = ready_state_for(actor);
+            state.active_player = actor;
+            state.priority_player = actor;
+            let mox = put(&mut state, actor, "Mox Diamond", Zone::Hand);
+            crate::engine::step(&mut state, crate::engine::Action::CastSpell(mox)).unwrap();
+            let decision = drive_until(&mut state, |decision| {
+                matches!(decision, crate::engine::Decision::ChooseEffectOption { .. })
+            });
+            assert!(matches!(
+                decision,
+                crate::engine::Decision::ChooseEffectOption { player, source, option_count: 1 }
+                    if player == actor && source == mox
+            ));
+            (state, mox)
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_single_option_mox_diamond_choice_encodes_applies_and_v3_still_refuses() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let (state, mox) = lone_mox_diamond_state(actor);
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state.clone());
+                assert!(matches!(
+                    try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::InvalidActionRange)
+                ));
+
+                let mut cube = FastActorSessionV1::from_cube_v1_fixture_state(state);
+                let decision = expected(&cube);
+                assert_eq!(decision.acting_player, actor.into());
+                assert_eq!(decision.legal_action_count, 1);
+                let (slice, _) = try_encoded_v4(&cube).unwrap();
+                assert_eq!(slice.active_action_count, 1);
+                assert_full_v4_scoring(&cube);
+                let tensors = v7_tensors(&cube).unwrap();
+                assert_eq!(tensors.action_features.len(), 195);
+                cube.step(decision.episode_id, decision.step, 0).unwrap();
+                assert_eq!(cube.state.objects.get(mox).zone, Zone::Graveyard);
+            }
+        }
+
+        /// `actor` casts Subtlety for its evoke cost with no mana: the cost
+        /// asks which blue card to exile from hand.
+        fn evoke_pitch_state(actor: PlayerId) -> GameState {
+            let mut state = ready_state_for(actor);
+            state.active_player = actor;
+            state.priority_player = actor;
+            let subtlety = put(&mut state, actor, "Subtlety", Zone::Hand);
+            put(&mut state, actor, "Brainstorm", Zone::Hand);
+            put(&mut state, actor, "Counterspell", Zone::Hand);
+            crate::engine::step(&mut state, crate::engine::Action::CastSpell(subtlety)).unwrap();
+            let decision = drive_until(&mut state, |decision| {
+                matches!(decision, crate::engine::Decision::ChooseCostTargets { .. })
+            });
+            assert!(matches!(
+                decision,
+                crate::engine::Decision::ChooseCostTargets {
+                    player,
+                    cost_kind: crate::engine::CostKind::ExileFromHandV1,
+                    ..
+                } if player == actor
+            ));
+            state
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_exile_from_hand_cost_tensorizes_with_its_own_name_and_v3_still_refuses() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let state = evoke_pitch_state(actor);
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state.clone());
+                try_encoded_v4(&frozen).unwrap();
+                assert!(matches!(
+                    v7_tensors(&frozen),
+                    Err(crate::native_flat_tensorizer_v2::NativeFlatTensorErrorV2::InvalidActionRange)
+                ));
+
+                let mut cube = FastActorSessionV1::from_cube_v1_fixture_state(state);
+                let decision = expected(&cube);
+                assert_eq!(decision.legal_action_count, 2);
+                assert_full_v4_scoring(&cube);
+                let tensors = v7_tensors(&cube).unwrap();
+                // No frozen cost slot is set for the new kind.
+                for row in tensors.action_features.chunks_exact(195) {
+                    assert!(row[85..96].iter().all(|&value| value == 0.0));
+                }
+                let exiled = cube.state.players[actor.index()].hand.len();
+                cube.step(decision.episode_id, decision.step, 0).unwrap();
+                assert_eq!(cube.state.players[actor.index()].hand.len(), exiled - 1);
+            }
+        }
+
+        /// Agatha's Soul Cauldron has exiled Devoted Druid and put its +1/+1
+        /// counter on `actor`'s Elvish Mystic, which now has the Druid's
+        /// activated abilities.
+        fn cauldron_grant_state(actor: PlayerId) -> (GameState, crate::ids::ObjectId) {
+            use crate::engine::{step, Action, Decision};
+            use crate::state::Target;
+            let mut state = ready_state_for(actor);
+            state.active_player = actor;
+            state.priority_player = actor;
+            let cauldron = put(
+                &mut state,
+                actor,
+                "Agatha's Soul Cauldron",
+                Zone::Battlefield,
+            );
+            let mystic = put(&mut state, actor, "Elvish Mystic", Zone::Battlefield);
+            let druid = put(
+                &mut state,
+                actor.opponent(),
+                "Devoted Druid",
+                Zone::Graveyard,
+            );
+            step(&mut state, Action::ActivateAbility(cauldron, 0)).unwrap();
+            let mut wanted = [Target::Object(druid), Target::Object(mystic)].into_iter();
+            for _ in 0..40 {
+                match crate::engine::advance_until_decision(&mut state) {
+                    Decision::ChooseTargets { .. } => {
+                        step(&mut state, Action::ChooseTarget(wanted.next().unwrap())).unwrap()
+                    }
+                    Decision::ChooseEffectTargets { .. } => step(
+                        &mut state,
+                        Action::ChooseEffectTarget(wanted.next().unwrap()),
+                    )
+                    .unwrap(),
+                    Decision::CastSpellOrPass { .. }
+                        if state.stack.is_empty() && state.engine.pending_triggers.is_empty() =>
+                    {
+                        break
+                    }
+                    Decision::CastSpellOrPass { .. } => step(&mut state, Action::Pass).unwrap(),
+                    other => panic!("Cauldron fixture reached {other:?}"),
+                }
+            }
+            assert_eq!(state.objects.get(druid).zone, Zone::Exile);
+            assert_eq!(state.objects.get(mystic).counters.plus1_plus1, 1);
+            state.active_player = actor;
+            state.priority_player = actor;
+            state.objects.get_mut(mystic).tapped = true;
+            (state, mystic)
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_granted_ability_tensorizes_its_donor_and_v3_still_refuses() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let (state, mystic) = cauldron_grant_state(actor);
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state.clone());
+                try_encoded_v4(&frozen).unwrap();
+                assert!(matches!(
+                    v7_tensors(&frozen),
+                    Err(crate::native_flat_tensorizer_v2::NativeFlatTensorErrorV2::ActionReferenceShape)
+                ));
+
+                let mut cube = FastActorSessionV1::from_cube_v1_fixture_state(state);
+                let decision = expected(&cube);
+                let granted = cube
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .candidates
+                    .iter()
+                    .position(|candidate| {
+                        matches!(
+                            &candidate.semantic,
+                            ActionSemanticV1::ActivateAbility {
+                                source,
+                                granted_ability: crate::rl::GrantedAbilityPublicV1(Some(_)),
+                                ..
+                            } if source.arena_id == mystic.0
+                        )
+                    })
+                    .expect("the Mystic has a granted activated ability");
+                assert_full_v4_scoring(&cube);
+                let tensors = v7_tensors(&cube).unwrap();
+                assert_eq!(
+                    tensors.action_features.len(),
+                    195 * usize::try_from(decision.legal_action_count).unwrap()
+                );
+                // The granted row's references are the source (role 0), then
+                // the donor (role 2), with their own card tokens.
+                let granted_refs: Vec<usize> = tensors
+                    .action_ref_action_indices
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, &index)| usize::try_from(index).unwrap() == granted)
+                    .map(|(position, _)| position)
+                    .collect();
+                assert_eq!(granted_refs.len(), 2);
+                let (source_ref, donor_ref) = (granted_refs[0], granted_refs[1]);
+                let role = |position: usize| {
+                    tensors.action_ref_features[position * 25..position * 25 + 10]
+                        .iter()
+                        .position(|&value| value == 1.0)
+                        .unwrap()
+                };
+                assert_eq!((role(source_ref), role(donor_ref)), (0, 2));
+                let donor = match &cube.current.as_ref().unwrap().candidates[granted].semantic {
+                    ActionSemanticV1::ActivateAbility {
+                        granted_ability: crate::rl::GrantedAbilityPublicV1(Some((donor, _))),
+                        ..
+                    } => donor.clone(),
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    tensors.action_ref_card_ids[source_ref],
+                    i64::from(flat_card_token_v2(cube.state.objects.get(mystic).card_def))
+                );
+                assert_eq!(
+                    tensors.action_ref_card_ids[donor_ref],
+                    i64::from(flat_card_token_v2(donor.card_db_id))
+                );
+                // Malformed local and granted indices are refused.
+                for edit in [
+                    (|row: &mut FlatScorerActionCoreV2| row.number = -1)
+                        as fn(&mut FlatScorerActionCoreV2),
+                    |row| row.number = 65_536,
+                    |row| row.ability_index = 0,
+                    |row| row.ability_index = u8::MAX,
+                ] {
+                    assert!(matches!(
+                        v7_tensors_edited(&cube, |actions| edit(&mut actions[granted])),
+                        Err(crate::native_flat_tensorizer_v2::NativeFlatTensorErrorV2::InvalidActionRange)
+                    ));
+                }
+                cube.step(
+                    decision.episode_id,
+                    decision.step,
+                    u32::try_from(granted).unwrap(),
+                )
+                .unwrap();
             }
         }
 
