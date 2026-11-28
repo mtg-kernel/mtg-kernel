@@ -2349,6 +2349,16 @@ pub enum CommittedEvent {
     CopyProducerAbilityPublishedV1 {
         publication: Box<crate::copy_entry_v1::AbilityPublicationV1>,
     },
+    /// Issue #1030: an aborted cast returned `restored.object` to its origin
+    /// zone, two zone changes (to the stack and back) that commit no
+    /// `ZoneChange` or `SpellCast` event. Written only when a stack item's
+    /// `paid_cost_refs` names that card, so a copy parent's payment check
+    /// (`object_zone_changes_after`) can count those changes; Harvester's
+    /// rollback writes `HarvesterCastReversedV1` instead. `restored` is the
+    /// incarnation the abort produced.
+    PaidCostCardCastAbortedV1 {
+        restored: crate::effect::EffectObjectBinding,
+    },
 }
 
 pub use crate::fixed_source_damage_v3::OutcomeV3 as FixedDamageOutcomeV3;

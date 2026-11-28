@@ -298,3 +298,8 @@ SHA-256 `25dd7a46c36a01c5dc92eaccddbc58479a4e7d4753aa4becf010c2ddc233f8e5`.
 `ResolutionDrawChoiceOfferedV1` and `ResolutionDrawChoiceAnsweredV1` (the last
 five rows) are hand-built from their declared fields. They exercise kind
 indexing and value serialization, not a replayable resolution.
+
+`PaidCostCardCastAbortedV1` (issue #1030, the last row) is hand-built from its
+declared field, reusing the `restored` binding shape of the
+`HarvesterCastReversedV1` sample. It exercises kind indexing and value
+serialization, not a replayable aborted cast.
