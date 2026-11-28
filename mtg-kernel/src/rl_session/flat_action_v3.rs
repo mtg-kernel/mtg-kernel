@@ -254,9 +254,30 @@ pub(super) fn normalize_candidates(
             ) {
                 return Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation);
             }
-            let order =
-                crate::rl::positionless_library_candidate_order(&candidate.semantic, search)
-                    .map_err(|_| FlatActionDecisionSliceErrorV1::HiddenActionReference)?;
+            let order = match crate::rl::positionless_library_candidate_order(
+                &candidate.semantic,
+                search,
+            ) {
+                Ok(order) => order,
+                // CubeV1's decision-local library (`rl::cube_v1_decision_local_library`)
+                // holds only the library part of a library-and-graveyard pile
+                // (Doomsday). Its public graveyard cards follow the library
+                // cards in their raw, graveyard order (the stable sort keeps
+                // it); they resolve to their ordinary graveyard rows.
+                Err(_)
+                    if session.is_cube_v1()
+                        && matches!(
+                            &candidate.semantic,
+                            ActionSemanticV1::ChooseEffectTarget {
+                                target: TargetRefV1::Object { object },
+                                ..
+                            } if object.zone == Zone::Graveyard
+                        ) =>
+                {
+                    search.cards.len()
+                }
+                Err(_) => return Err(FlatActionDecisionSliceErrorV1::HiddenActionReference),
+            };
             ordered.push((order, candidate));
         }
         ordered.sort_by_key(|(order, _)| *order);
