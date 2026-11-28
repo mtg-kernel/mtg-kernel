@@ -36243,6 +36243,7 @@ fn record_paid_cost_card_cast_abort_v1(
         .engine
         .event_history
         .range_v2(rollback_from..)
+        .iter()
         .any(|event| {
             matches!(event, CommittedEvent::HarvesterCastReversedV1 { restored, .. }
                 if restored.object == spell)
