@@ -6480,13 +6480,16 @@ fn ordinary_convoke_tappers_pay_the_gloom_taxed_total() {
 }
 
 #[test]
-fn ordinary_convoke_from_the_library_uses_bilbo_and_trinisphere_totals() {
-    // Future Sight casts Martyr's Soul from the library. Bilbo makes its
+fn ordinary_convoke_from_the_graveyard_uses_bilbo_and_trinisphere_totals() {
+    // Yawgmoth's Will casts Martyr's Soul from the graveyard. Bilbo makes its
     // convoke {2}{W} cost {1}{W}; Trinisphere then raises it back to three.
     for trinisphere in [false, true] {
         let mut state = plains();
         mtg_kernel::rl::enable_public_shroud_v1(&mut state);
-        put(&mut state, P0, "Future Sight", Zone::Battlefield);
+        let will = put(&mut state, P0, "Yawgmoth's Will", Zone::Hand);
+        pool(&mut state, P0, &[ManaColor::B], 2);
+        cast(&mut state, will, &[]);
+        settled(&mut state);
         let bilbo = put(
             &mut state,
             P0,
@@ -6497,7 +6500,7 @@ fn ordinary_convoke_from_the_library_uses_bilbo_and_trinisphere_totals() {
             put(&mut state, P0, "Trinisphere", Zone::Battlefield);
         }
         let inspector = put(&mut state, P0, "Thraben Inspector", Zone::Battlefield);
-        let soul = put(&mut state, P0, "Martyr's Soul", Zone::Library);
+        let soul = put(&mut state, P0, "Martyr's Soul", Zone::Graveyard);
         pool(&mut state, P0, &[ManaColor::W], 0);
         let Decision::ChooseEffectTargets {
             max_targets,
