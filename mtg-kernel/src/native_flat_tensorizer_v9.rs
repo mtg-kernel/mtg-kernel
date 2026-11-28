@@ -14,7 +14,6 @@
 //! The V9 identity is never compared against the V8, V7 or V4 one or
 //! relabeled as either.
 
-
 use crate::flat_policy_v6::{
     FlatScoringDecisionViewV9, FLAT_V9_OBJECT_EXTRA_DIM_V1, FLAT_V9_STATE_EXTRA_DIM_V1,
 };

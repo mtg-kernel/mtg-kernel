@@ -33,7 +33,6 @@
 //!
 //! Draws since placement count the owner's draws (`GameState::draw_card`).
 
-
 use crate::ids::PlayerId;
 use crate::state::{GameState, ObservationNoteKindV1, Zone};
 use serde::{Deserialize, Serialize};
