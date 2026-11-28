@@ -50,6 +50,11 @@ pub struct FlatScoringExtensionsV4 {
     /// (`rl_session::pauper_london_v1`). None at every in-game decision; the
     /// V4 tensorizer refuses a decision where it is Some.
     pub london_pregame: Option<FlatLondonPregameV7>,
+    /// The decision belongs to a CubeV1 session
+    /// (`FlatActionContractModeV1::CubeV1`). The V4/V7 tensorizer then admits
+    /// the CubeV1 action rows `native_flat_tensorizer_v2::ActionRowsV3`
+    /// names; false for every frozen mode, which keeps refusing them.
+    pub cube_flat_action_v1: bool,
 }
 
 /// Public London facts at a pregame decision, actor-relative `[self,
@@ -150,6 +155,7 @@ impl FastActorSessionV1 {
         decision.extensions.london_pregame = self
             .flat_london_pregame_v7()
             .map_err(|_| FlatDecisionErrorV2::ObservationContract)?;
+        decision.extensions.cube_flat_action_v1 = self.is_cube_v1();
         Ok(decision)
     }
 }

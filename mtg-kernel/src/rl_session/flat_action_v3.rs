@@ -473,10 +473,11 @@ fn build_with_extensions(
             .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
         let ref_start = u32::try_from(pending_refs.len())
             .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
-        let core = flat_action_core_and_refs_v1(
+        let core = flat_action_core_and_refs_mode_v1(
             &candidate.semantic,
             current.actor.into(),
             ref_start,
+            session.is_cube_v1(),
             |role, order_index, associated_order, reference| {
                 let historical = if role == FlatActionRefRoleV1::Source {
                     extension

@@ -1365,6 +1365,29 @@ fn flat_action_core_and_refs_v1<F>(
     semantic: &ActionSemanticV1,
     expected_actor: PlayerSeatV1,
     ref_start: u32,
+    emit_ref: F,
+) -> Result<FlatActionCoreV1, FlatActionDecisionSliceErrorV1>
+where
+    F: FnMut(
+        FlatActionRefRoleV1,
+        u16,
+        u16,
+        &CardStableRefV1,
+    ) -> Result<(), FlatActionDecisionSliceErrorV1>,
+{
+    flat_action_core_and_refs_mode_v1(semantic, expected_actor, ref_start, false, emit_ref)
+}
+
+/// [`flat_action_core_and_refs_v1`] for a session whose contract mode is
+/// known. `cube_v1` (a CubeV1 session) admits exactly one more shape: an
+/// effect choice with a single option (Mox Diamond's entry choice with no
+/// land card in hand offers only "put it into the graveyard"), which every
+/// frozen mode refuses as `InvalidActionRange`. Every other row is unchanged.
+fn flat_action_core_and_refs_mode_v1<F>(
+    semantic: &ActionSemanticV1,
+    expected_actor: PlayerSeatV1,
+    ref_start: u32,
+    cube_v1: bool,
     mut emit_ref: F,
 ) -> Result<FlatActionCoreV1, FlatActionDecisionSliceErrorV1>
 where
@@ -1541,7 +1564,8 @@ where
             option_count,
         } => {
             check_actor(*actor)?;
-            if *option_count < 2 || *option_index >= *option_count {
+            let minimum_options = if cube_v1 { 1 } else { 2 };
+            if *option_count < minimum_options || *option_index >= *option_count {
                 return Err(FlatActionDecisionSliceErrorV1::InvalidActionRange);
             }
             core.kind = FlatActionKindV1::ChooseEffectOption;
