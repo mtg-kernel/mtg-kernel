@@ -612,6 +612,8 @@ pub mod limited_rules_only_v1;
 pub mod limited_session_v1;
 pub mod london_mulligan_v1;
 pub mod mana;
+// Rules 104.4b / 731.4: a mandatory loop no player can break is a draw (#957).
+pub mod mandatory_loop_v1;
 // Model-guided searcher authority record SCHEMA ONLY (design item 4,
 // `CLAUDE-MODEL-GUIDED-SEARCHER-DESIGN-V1.md` Section 1.4 / 5.3). No
 // dispatch, no science-loop or scorer-bridge wiring; that is item 6, its own

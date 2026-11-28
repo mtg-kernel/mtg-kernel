@@ -3642,7 +3642,76 @@ const SPHINX_LORE_TRIGGERS_V1: [TriggeredAbilityDef; 1] = [TriggeredAbilityDef {
     condition: TriggerCondition::Attacks,
     ..etb_trigger(crate::effect::sphinx_lore_v1::marker)
 }];
+#[cfg(all(
+    test,
+    feature = "limited-fdn-fixtures",
+    not(feature = "standard-magezero-fixtures")
+))]
+thread_local! {
+    static TEST_TRIGGERS_V1: std::cell::RefCell<Vec<(u16, &'static [TriggeredAbilityDef])>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Test only: while alive on this thread, `triggers_for(card_def)` returns
+/// `triggers` in place of the card's own abilities, so a test can hand-build
+/// a permanent's triggered ability from existing conditions and effects (the
+/// mandatory loop tests, `mandatory_loop_v1`). The card must already have a
+/// triggered ability, so the engine's per-card trigger scan reaches it.
+#[cfg(all(
+    test,
+    feature = "limited-fdn-fixtures",
+    not(feature = "standard-magezero-fixtures")
+))]
+pub(crate) struct TestTriggersV1 {
+    card_def: u16,
+}
+
+#[cfg(all(
+    test,
+    feature = "limited-fdn-fixtures",
+    not(feature = "standard-magezero-fixtures")
+))]
+impl TestTriggersV1 {
+    pub(crate) fn install(card_def: u16, triggers: &'static [TriggeredAbilityDef]) -> Self {
+        assert!(
+            !triggers_for_uncached(card_def).is_empty(),
+            "the host card must already have a triggered ability"
+        );
+        TEST_TRIGGERS_V1.with(|installed| installed.borrow_mut().push((card_def, triggers)));
+        Self { card_def }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "limited-fdn-fixtures",
+    not(feature = "standard-magezero-fixtures")
+))]
+impl Drop for TestTriggersV1 {
+    fn drop(&mut self) {
+        TEST_TRIGGERS_V1.with(|installed| {
+            installed
+                .borrow_mut()
+                .retain(|(card_def, _)| *card_def != self.card_def)
+        });
+    }
+}
+
 pub fn triggers_for(card_def: u16) -> &'static [TriggeredAbilityDef] {
+    #[cfg(all(
+        test,
+        feature = "limited-fdn-fixtures",
+        not(feature = "standard-magezero-fixtures")
+    ))]
+    if let Some(triggers) = TEST_TRIGGERS_V1.with(|installed| {
+        installed
+            .borrow()
+            .iter()
+            .find(|(installed, _)| *installed == card_def)
+            .map(|(_, triggers)| *triggers)
+    }) {
+        return triggers;
+    }
     static TABLE: std::sync::OnceLock<Box<[&'static [TriggeredAbilityDef]]>> =
         std::sync::OnceLock::new();
     let table = TABLE.get_or_init(|| {
