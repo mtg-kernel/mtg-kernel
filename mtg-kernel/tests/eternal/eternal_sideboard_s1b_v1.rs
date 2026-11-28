@@ -658,14 +658,12 @@ fn peer_miracle_preserves_the_original_library_count_and_life_loss() {
 /// The two Brainstorm stops straddle its second attempt after dredging the
 /// first. Peer had a Mogg Fanatic activation above it. Decree destroyed one
 /// creature after Fanatic sacrificed itself. Tersa discarded after Putrid Imp.
-#[test]
-fn released_draw_choices_resume_through_their_remaining_attempts() {
-    use flate2::read::GzDecoder;
-    use std::collections::BTreeMap;
-    let saves: BTreeMap<String, GameState> = serde_json::from_reader(GzDecoder::new(
-        &include_bytes!("../fixtures/draw_choices_51a72f253.json.gz")[..],
-    ))
-    .unwrap();
+fn released_saves() -> std::collections::BTreeMap<String, GameState> {
+    let saves: std::collections::BTreeMap<String, GameState> =
+        serde_json::from_reader(flate2::read::GzDecoder::new(
+            &include_bytes!("../fixtures/draw_choices_51a72f253.json.gz")[..],
+        ))
+        .unwrap();
     assert!(saves.keys().map(String::as_str).eq([
         "decree",
         "discard",
@@ -678,10 +676,60 @@ fn released_draw_choices_resume_through_their_remaining_attempts() {
         "riddler",
         "sylvan"
     ]));
-    for (name, mut state) in saves {
+    saves
+}
+
+/// Each released save resumes by revealing a Miracle, dredging only for
+/// Riddler, and otherwise declining the replacement.
+fn released_answer(name: &str, state: &GameState, prompt: Decision) -> Action {
+    match prompt {
+        Decision::ChooseEffectOption { .. } => Action::ChooseEffectOption(0),
+        Decision::ChooseEffectTargets { ref legal_targets, .. }
+            if name == "riddler"
+                && legal_targets.iter().any(|&target| {
+                    matches!(target, Target::Object(card) if state.objects.get(card).zone == Zone::Graveyard)
+                }) =>
+        {
+            Action::ChooseEffectTarget(legal_targets[0])
+        }
+        other => first_answer(other),
+    }
+}
+
+/// The drawer's cards moved by the resumed resolution, in history order.
+fn released_movements(state: &GameState, from: usize, drawer: PlayerId) -> Vec<String> {
+    use mtg_kernel::event::CommittedEvent;
+    let history: Vec<_> = state.engine.event_history.iter().collect();
+    history[from..]
+        .iter()
+        .filter_map(|row| {
+            let (verb, object) = match row {
+                CommittedEvent::Draw {
+                    player,
+                    object: Some(object),
+                } if *player == drawer => ("draw", object),
+                CommittedEvent::ZoneChange {
+                    object, from, to, ..
+                } if state.objects.get(*object).owner == drawer => match (from, to) {
+                    (Zone::Library, Zone::Graveyard) => ("mill", object),
+                    (Zone::Graveyard, Zone::Hand) => ("dredge", object),
+                    (Zone::Hand, Zone::Library) => ("top", object),
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            Some(format!("{verb} {}", object.0))
+        })
+        .collect()
+}
+
+#[test]
+fn released_draw_choices_resume_through_their_remaining_attempts() {
+    for (name, mut state) in released_saves() {
         mtg_kernel::effect::validate_pending_effect_choice(&state)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let drawer = if name.starts_with("peer") { P1 } else { P0 };
+        let loaded = state.engine.event_history.len();
         let mut decision = settle(&mut state);
         if name.starts_with("jace") {
             let Some(Decision::ChooseEffectTargets { legal_targets, .. }) = decision else {
@@ -694,46 +742,239 @@ fn released_draw_choices_resume_through_their_remaining_attempts() {
             ));
             continue;
         }
+        let mut miracles = Vec::new();
         for _ in 0..16 {
             let Some(prompt) = decision else { break };
             if let Some(mtg_kernel::effect::EffectFrame::MiracleDrawRemainderV1 {
-                remaining, ..
+                remaining,
+                drawn,
+                ..
             }) = state
                 .engine
                 .pending_effect
                 .as_ref()
                 .and_then(|pending| pending.frames.last())
             {
+                assert!(
+                    matches!(prompt, Decision::ChooseEffectOption { player, source, .. }
+                        if player == drawer && source == drawn.object),
+                    "{name}: {prompt:?}"
+                );
+                miracles.push((drawn.object.0, *remaining));
                 assert_miracle_remainder_rejected(&state, *remaining, remaining + 1);
             }
-            let action = match prompt {
-                Decision::ChooseEffectOption { .. } => Action::ChooseEffectOption(0),
-                Decision::ChooseEffectTargets { ref legal_targets, .. } if name == "riddler"
-                    && legal_targets.iter().any(|&target| {
-                        matches!(target, Target::Object(card) if state.objects.get(card).zone == Zone::Graveyard)
-                    }) => Action::ChooseEffectTarget(legal_targets[0]),
-                other => first_answer(other),
-            };
+            let action = released_answer(&name, &state, prompt);
             act(&mut state, action);
             state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
             decision = settle(&mut state);
         }
         assert!(decision.is_none(), "{name} still paused at {decision:?}");
-        let draws = match name.as_str() {
-            "miracle" | "printed" | "sylvan" => 2,
-            "peer" => 5,
-            "peer_response_dredge" => 4,
-            "decree" | "discard" | "riddler" => 1,
-            _ => panic!("unrecognized released save {name}"),
-        };
+        // The Miracle cards drawn first this turn, and the attempts each
+        // remainder still owed when it paused.
+        let (draws, expected_miracles, movements): (u32, &[(u32, u32)], &[&str]) =
+            match name.as_str() {
+                "decree" => (1, &[], &["draw 0"]),
+                "discard" => (1, &[(0, 0)], &["draw 0"]),
+                // Loaded at its stop; the remaining attempt draws, then two return.
+                "miracle" => (2, &[(4, 1)], &["draw 5", "top 24", "top 4"]),
+                "peer" => (
+                    5,
+                    &[(16, 4)],
+                    &["draw 16", "draw 17", "draw 18", "draw 19", "draw 20"],
+                ),
+                "peer_response_dredge" => {
+                    (4, &[(16, 3)], &["draw 16", "draw 17", "draw 18", "draw 19"])
+                }
+                "printed" => (2, &[(4, 1)], &["draw 4", "draw 5", "top 24", "top 4"]),
+                "riddler" => (1, &[], &["mill 4", "dredge 0", "draw 5", "top 25", "top 0"]),
+                "sylvan" => (2, &[], &["draw 5", "top 1", "top 5"]),
+                _ => panic!("unrecognized released save {name}"),
+            };
         assert_eq!(
             state.players[drawer.index()].draws_this_turn,
             draws,
             "{name}"
         );
+        assert_eq!(miracles, expected_miracles, "{name}");
+        assert_eq!(
+            released_movements(&state, loaded, drawer),
+            movements,
+            "{name}"
+        );
         if name.starts_with("peer") {
             assert_eq!(life(&state, drawer), 10);
         }
+    }
+}
+
+/// Restage the paused draw with `outstanding` attempts left and every other
+/// draw field consistent: a replacement choice counts its own attempt plus
+/// the staged rest, and a Miracle stop names its remainder twice.
+fn forge_outstanding(state: &GameState, outstanding: u32) -> Option<GameState> {
+    use mtg_kernel::effect::{
+        EffectFrame, EffectOp, EffectTargetSelectionPurpose, PendingEffectChoice, PlayerRef,
+    };
+    use mtg_kernel::eternal_cards_v1::e3::E3ChoiceKindV1;
+    use mtg_kernel::eternal_vintage_e7b_v1::E7bChoiceV1;
+    use mtg_kernel::event::CommittedEvent;
+    let mut forged = state.clone();
+    let pending = forged.engine.pending_effect.as_mut()?;
+    if let Some(EffectFrame::MiracleDrawRemainderV1 { remaining, .. }) = pending.frames.last_mut() {
+        *remaining = outstanding;
+        let at = forged
+            .engine
+            .event_history
+            .iter()
+            .rposition(|row| matches!(row, CommittedEvent::MiracleDrawSuspendedV1 { .. }))?;
+        let CommittedEvent::MiracleDrawSuspendedV1 { remaining, .. } =
+            &mut forged.engine.event_history[at]
+        else {
+            unreachable!()
+        };
+        *remaining = outstanding;
+        return Some(forged);
+    }
+    let Some(PendingEffectChoice::SelectTargets {
+        purpose: EffectTargetSelectionPurpose::EternalV1 { choice },
+        ..
+    }) = pending.choice.as_mut()
+    else {
+        return None;
+    };
+    if outstanding == 0
+        || !matches!(
+            choice.kind,
+            E3ChoiceKindV1::E7bV1(E7bChoiceV1::DredgeV1 | E7bChoiceV1::JaceOrHullbreacherV1)
+        )
+    {
+        return None;
+    }
+    let path = choice.path.clone();
+    let player = if choice.player == pending.ctx.controller {
+        PlayerRef::Controller
+    } else {
+        // Peer's drawer is its target.
+        PlayerRef::Target(0)
+    };
+    for frames in [&mut pending.frames, &mut choice.remaining] {
+        if matches!(frames.last(), Some(EffectFrame::Program { op: EffectOp::DrawCards { .. }, path: site }) if *site == path)
+        {
+            frames.pop();
+        }
+        if outstanding > 1 {
+            frames.push(EffectFrame::Program {
+                op: EffectOp::DrawCards {
+                    player,
+                    count: outstanding - 1,
+                },
+                path: path.clone(),
+            });
+        }
+    }
+    Some(forged)
+}
+
+/// Why a restore of `state` refuses `action`, if it does.
+fn restore_error(state: &GameState, action: &Action) -> Option<String> {
+    let mut restored: GameState =
+        serde_json::from_slice(&serde_json::to_vec(state).unwrap()).unwrap();
+    mtg_kernel::effect::validate_pending_effect_choice(&restored)
+        .and_then(|()| engine::step(&mut restored, action.clone()).map(|_| ()))
+        .err()
+}
+
+/// The outstanding attempts a restore of the paused draw accepts.
+fn accepted_counts(state: &GameState, action: &Action) -> Vec<u32> {
+    (0..=8)
+        .filter(|&outstanding| {
+            forge_outstanding(state, outstanding)
+                .is_some_and(|forged| restore_error(&forged, action).is_none())
+        })
+        .collect()
+}
+
+/// Released history fixes every count except where a boundary is missing:
+/// two contiguous discard batches, a dredge before Peer that a response may
+/// have made, and a dredge that the turn draw or Sylvan Library may have made.
+#[test]
+fn released_draw_choices_accept_only_counts_their_history_allows() {
+    for (name, mut state) in released_saves() {
+        let decision = settle(&mut state).unwrap_or_else(|| panic!("{name} lost its stop"));
+        let action = released_answer(&name, &state, decision);
+        let expected: &[u32] = match name.as_str() {
+            "decree" | "jace_after_treasure" | "miracle" => &[1],
+            "jace" | "printed" | "riddler" => &[2],
+            "discard" | "sylvan" => &[1, 2],
+            "peer" | "peer_response_dredge" => &[4, 5],
+            _ => panic!("unrecognized released save {name}"),
+        };
+        assert_eq!(accepted_counts(&state, &action), expected, "{name}");
+    }
+    // The native total would ignore Brainstorm's dredged first attempt.
+    let mut state = released_saves().remove("printed").unwrap();
+    let decision = settle(&mut state).unwrap();
+    let action = released_answer("printed", &state, decision);
+    let forged = forge_outstanding(&state, 3).unwrap();
+    assert!(restore_error(&forged, &action)
+        .unwrap()
+        .contains("released draw choice changed its remaining draw count"));
+}
+
+/// Once a released choice resumes, its retained offer binds every later
+/// stop of that draw. Without the offer, no count restores.
+#[test]
+fn resaved_released_draws_require_their_retained_offer() {
+    use mtg_kernel::event::CommittedEvent;
+    for (name, mut state) in released_saves() {
+        if name.starts_with("jace") {
+            continue;
+        }
+        let mut checked = Vec::new();
+        let mut decision = settle(&mut state);
+        while let Some(prompt) = decision {
+            let action = released_answer(&name, &state, prompt);
+            let item = state
+                .engine
+                .pending_effect
+                .as_ref()
+                .unwrap()
+                .resolving_item
+                .v4
+                .stack_item_id;
+            let offer = state.engine.event_history.iter().position(|row| {
+                matches!(row, CommittedEvent::ResolutionDrawChoiceOfferedV1 { stack_item_id, .. }
+                    if *stack_item_id == item)
+            });
+            let accepted = accepted_counts(&state, &action);
+            if let (Some(at), [outstanding]) = (offer, accepted.as_slice()) {
+                let mut snapshot = serde_json::to_value(&state).unwrap();
+                snapshot["engine"]["event_history"]
+                    .as_array_mut()
+                    .unwrap()
+                    .remove(at);
+                let stripped: GameState = serde_json::from_value(snapshot).unwrap();
+                assert!(accepted_counts(&stripped, &action).is_empty(), "{name}");
+                let forged = forge_outstanding(&stripped, *outstanding).unwrap();
+                assert!(
+                    restore_error(&forged, &action)
+                        .unwrap()
+                        .contains("lost its original replacement offer"),
+                    "{name}"
+                );
+                checked.push(*outstanding);
+            }
+            act(&mut state, action);
+            state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+            decision = settle(&mut state);
+        }
+        let expected: &[u32] = match name.as_str() {
+            "discard" => &[0],
+            "peer" => &[4, 4, 3, 2, 1],
+            "peer_response_dredge" => &[3, 3, 2, 1],
+            "printed" => &[1, 1],
+            _ => &[],
+        };
+        assert_eq!(checked, expected, "{name}");
     }
 }
 
