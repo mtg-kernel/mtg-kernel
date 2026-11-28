@@ -939,6 +939,68 @@ fn wan_shi_tong_all_knowing_tuck_owner_chooses_second_or_bottom_and_creates_spir
     assert_eq!(named(&state, P0, "Wan Shi Tong Spirit Token").len(), 2);
 }
 
+/// #945 (r1 census E31821, D70644): Abhorrent Oculus manifests an Island,
+/// and Wan Shi Tong's entry trigger targets it. The face-down permanent is a
+/// 2/2 creature without the land type (CR 708.2a), so it stays a legal
+/// nonland target as the trigger resolves (CR 608.2b), and the owner's
+/// placement choice checks the same characteristics the targeting did.
+#[test]
+fn wan_shi_tong_all_knowing_tucks_a_manifested_land() {
+    let mut state = game(&["Island"; 30]);
+    for _ in 0..6 {
+        put(&mut state, P0, "Island", Zone::Graveyard);
+    }
+    let oculus = put(&mut state, P0, "Abhorrent Oculus", Zone::Hand);
+    pool(&mut state, P0, &[ManaColor::U], 2);
+    cast(&mut state, oculus, &[]);
+    settle_first(&mut state);
+    assert_eq!(zone(&state, oculus), Zone::Battlefield);
+    pass_until(&mut state, |state| {
+        state.active_player == P1 && state.step == Step::Main1
+    });
+    let manifested: Vec<ObjectId> = state.players[0]
+        .battlefield
+        .iter()
+        .copied()
+        .filter(|&object| state.objects.get(object).v4.face_down_v1.is_some())
+        .collect();
+    let [land] = manifested[..] else {
+        panic!("Oculus manifested {manifested:?}");
+    };
+    assert!(CARD_DEFS[state.objects.get(land).card_def as usize].has_type(CardType::Land));
+    assert!(!engine::object_has_type(&state, land, CardType::Land));
+    assert!(engine::object_has_type(&state, land, CardType::Creature));
+
+    let wst = put(&mut state, P1, "Wan Shi Tong, All-Knowing", Zone::Hand);
+    pool(&mut state, P1, &[ManaColor::U, ManaColor::U], 3);
+    cast(&mut state, wst, &[]);
+    let mut owner_prompted = false;
+    settle_with(&mut state, |_, decision| match decision {
+        Decision::ChooseTargets { legal_targets, .. } => {
+            assert!(legal_targets.contains(&Target::Object(land)));
+            Action::ChooseTarget(Target::Object(land))
+        }
+        Decision::ChooseEffectOption {
+            player,
+            option_count,
+            ..
+        } => {
+            assert_eq!(
+                (player, option_count),
+                (P0, 2),
+                "the land's owner places it"
+            );
+            owner_prompted = true;
+            Action::ChooseEffectOption(1)
+        }
+        other => first_answer(other),
+    });
+    assert!(owner_prompted);
+    assert_eq!(zone(&state, land), Zone::Library);
+    assert_eq!(state.players[0].library.last().copied(), Some(land));
+    assert_eq!(named(&state, P1, "Wan Shi Tong Spirit Token").len(), 2);
+}
+
 #[test]
 fn wan_shi_tong_all_knowing_batched_library_trigger_and_non_triggers() {
     // 1. Brainstorm puts two cards back into the library in one batch ->

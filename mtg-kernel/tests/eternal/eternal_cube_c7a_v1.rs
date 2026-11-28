@@ -544,6 +544,67 @@ fn brain_freeze_escape_via_underworld_breach_and_yawgmoths_will_resolve_storm_co
     );
 }
 
+/// #945: Remand or Reprieve returns Brain Freeze to hand while its first Storm
+/// trigger waits, and Brain Freeze is cast again. The returned card is a new
+/// object (CR 400.7), so the second cast is its own cast with its own Storm
+/// trigger. The first trigger still copies the first cast from its
+/// last-known information with the count frozen when it triggered
+/// (CR 702.40a, 707.10).
+#[test]
+fn brain_freeze_recast_after_remand_or_reprieve_keeps_its_first_storm_trigger() {
+    for (bounce, colors) in [
+        ("Remand", [ManaColor::U, ManaColor::U, ManaColor::U]),
+        ("Reprieve", [ManaColor::U, ManaColor::U, ManaColor::W]),
+    ] {
+        let mut state = game(&["Island"; 40]);
+        let petal = put(&mut state, P0, "Lotus Petal", Zone::Hand);
+        cast(&mut state, petal, &[]);
+        settled(&mut state);
+
+        let freeze = put(&mut state, P0, "Brain Freeze", Zone::Hand);
+        let counter = put(&mut state, P0, bounce, Zone::Hand);
+        pool(&mut state, P0, &colors, 3);
+        cast(&mut state, freeze, &[Target::Player(P1)]);
+        // Brain Freeze sits under its Storm trigger (one copy: Lotus Petal).
+        assert!(castable(&mut state, counter), "{bounce}");
+        act(&mut state, Action::CastSpell(counter));
+        choose_target(&mut state, Target::Object(freeze));
+        pass_until(&mut state, |state| zone(state, counter) == Zone::Graveyard);
+        assert_eq!(zone(&state, freeze), Zone::Hand, "{bounce}");
+        assert_eq!(
+            state.stack.len(),
+            1,
+            "{bounce}: the first Storm trigger waits"
+        );
+        assert_eq!(state.players[0].spells_cast_this_turn, 3, "{bounce}");
+
+        // The second cast counts Lotus Petal, the first Brain Freeze and the
+        // bounce spell: three copies.
+        cast(&mut state, freeze, &[Target::Player(P1)]);
+        assert_eq!(state.players[0].spells_cast_this_turn, 4, "{bounce}");
+        let saved = serde_json::to_vec(&state).unwrap();
+        let mut restored: GameState = serde_json::from_slice(&saved).unwrap();
+        let milled_before = state.players[1].graveyard.len();
+        let library_before = state.players[1].library.len();
+        for branch in [&mut state, &mut restored] {
+            settle_with(branch, |_, decision| match decision {
+                Decision::ChooseTargets { .. } => Action::ChooseTarget(Target::Player(P1)),
+                other => first_answer(other),
+            });
+            assert!(branch.stack.is_empty(), "{bounce}");
+            assert_eq!(zone(branch, freeze), Zone::Graveyard, "{bounce}");
+            // Second cast: 1 + 3 copies. First trigger: 1 copy. 5 x 3 cards.
+            assert_eq!(
+                branch.players[1].graveyard.len(),
+                milled_before + 15,
+                "{bounce}"
+            );
+            assert_eq!(branch.players[1].library.len(), library_before - 15);
+        }
+        assert_eq!(state.state_hash(), restored.state_hash(), "{bounce}");
+    }
+}
+
 // ---- Hullbreacher audited Eternal draw leaves ----------------------------------
 
 #[test]
