@@ -2024,8 +2024,11 @@ mod tests {
                     .expect("the chooser sees the cards they search");
                 assert_eq!(search.chooser, actor.into());
                 assert_eq!(search.library_owner, actor.into());
-                let mut searched: Vec<u32> =
-                    search.cards.iter().map(|card| card.stable.arena_id).collect();
+                let mut searched: Vec<u32> = search
+                    .cards
+                    .iter()
+                    .map(|card| card.stable.arena_id)
+                    .collect();
                 searched.sort_unstable();
                 let mut cards: Vec<u32> = library.iter().map(|id| id.0).collect();
                 cards.sort_unstable();
@@ -2083,8 +2086,7 @@ mod tests {
                     .map(|name| put(&mut state, actor, name, Zone::Graveyard))
                     .collect();
                 let doomsday = put(&mut state, actor, "Doomsday", Zone::Hand);
-                state.players[actor.index()].mana_pool[crate::mana::ManaColor::B.pool_index()] +=
-                    3;
+                state.players[actor.index()].mana_pool[crate::mana::ManaColor::B.pool_index()] += 3;
                 step(&mut state, Action::CastSpell(doomsday)).unwrap();
                 loop {
                     match advance_until_decision(&mut state) {
@@ -2092,9 +2094,7 @@ mod tests {
                             assert_eq!(player, actor);
                             break;
                         }
-                        Decision::CastSpellOrPass { .. } => {
-                            step(&mut state, Action::Pass).unwrap()
-                        }
+                        Decision::CastSpellOrPass { .. } => step(&mut state, Action::Pass).unwrap(),
                         other => panic!("Doomsday fixture reached {other:?}"),
                     }
                 }
@@ -2110,7 +2110,10 @@ mod tests {
                     .decision_local_library
                     .unwrap();
                 assert_eq!(search.cards.len(), 4);
-                assert!(search.cards.iter().all(|card| card.stable.zone == Zone::Library));
+                assert!(search
+                    .cards
+                    .iter()
+                    .all(|card| card.stable.zone == Zone::Library));
                 let zones: Vec<Zone> = cube
                     .current
                     .as_ref()
@@ -2141,7 +2144,10 @@ mod tests {
                     .collect();
                 assert_eq!(graveyard_order, [graveyard[0].0, graveyard[1].0]);
                 let (slice, _) = try_encoded_v4(&cube).unwrap();
-                assert_eq!(slice.active_action_count, expected(&cube).legal_action_count);
+                assert_eq!(
+                    slice.active_action_count,
+                    expected(&cube).legal_action_count
+                );
                 assert_full_v4_scoring(&cube);
             }
         }
