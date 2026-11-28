@@ -135,7 +135,7 @@ pub fn serve_uniform_human_game(
         schema: PLAY_SCHEMA,
         input,
         output,
-        line: String::new(),
+        line: Vec::new(),
     };
     let conceded = HumanGameResult::Win {
         winner: human.opponent().into(),
