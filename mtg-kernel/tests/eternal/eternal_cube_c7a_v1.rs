@@ -581,7 +581,19 @@ fn brain_freeze_recast_after_remand_or_reprieve_keeps_its_first_storm_trigger() 
         // The second cast counts Lotus Petal, the first Brain Freeze and the
         // bounce spell: three copies.
         cast(&mut state, freeze, &[Target::Player(P1)]);
+        assert!(
+            matches!(
+                next(&mut state),
+                Decision::CastSpellOrPass { player: P0, .. }
+            ),
+            "{bounce}"
+        );
         assert_eq!(state.players[0].spells_cast_this_turn, 4, "{bounce}");
+        assert_eq!(
+            state.stack.len(),
+            3,
+            "{bounce}: the first trigger, the second cast and its trigger"
+        );
         let saved = serde_json::to_vec(&state).unwrap();
         let mut restored: GameState = serde_json::from_slice(&saved).unwrap();
         let milled_before = state.players[1].graveyard.len();
