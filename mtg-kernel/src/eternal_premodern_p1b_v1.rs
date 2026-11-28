@@ -1537,6 +1537,7 @@ pub(crate) fn finish_selection(
             for observer in [PlayerId::P0, PlayerId::P1] {
                 state.reveal_library_position(observer, controller, 0);
             }
+            crate::flat_v9_history_v1::on_tutor_placement_v1(state, controller);
             Ok(false)
         }
         P1bChoiceV1::ReplenishHostV1 {
