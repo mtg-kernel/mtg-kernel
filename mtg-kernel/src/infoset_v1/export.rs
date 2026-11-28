@@ -133,6 +133,31 @@ fn card_name(def: u16) -> &'static str {
         .map_or("", |c| c.name)
 }
 
+/// The pristine object every export writes for a tombstone, a placeholder
+/// or a fresh occupant: printing `def`'s name, owned and controlled by
+/// `owner`, in `zone` at generation `zcc`, with default counters and the
+/// card definition's default `ObjectStateV4`. The engine's cast-receipt
+/// validator compares an infoset receipt placeholder with this template
+/// (`authenticated_spell_cast_receipt`), so both read the one definition.
+pub(crate) fn template_object_v1(owner: PlayerId, def: u16, zone: Zone, zcc: u32) -> GameObject {
+    GameObject {
+        card_def: def,
+        name: card_name(def).to_string(),
+        owner,
+        controller: owner,
+        zone,
+        tapped: false,
+        summoning_sick: false,
+        damage: 0,
+        counters: Counters::default(),
+        attachments: Vec::new(),
+        v4: ObjectStateV4::from_card_def(def),
+        spell_copy_origin: None,
+        plotted_turn: None,
+        zone_change_count: zcc,
+    }
+}
+
 fn name_key(def: u16) -> NameKeyV1 {
     (card_name(def), def)
 }
@@ -1841,22 +1866,7 @@ fn export_versioned(
     // Step 8 (rewrite) with tombstones for unlinkable history references.
     let tomb_base = handles.len() as u32;
     let mut tombstones: Vec<GameObject> = Vec::new();
-    let template = |owner: PlayerId, def: u16, zone: Zone, zcc: u32| GameObject {
-        card_def: def,
-        name: card_name(def).to_string(),
-        owner,
-        controller: owner,
-        zone,
-        tapped: false,
-        summoning_sick: false,
-        damage: 0,
-        counters: Counters::default(),
-        attachments: Vec::new(),
-        v4: ObjectStateV4::from_card_def(def),
-        spell_copy_origin: None,
-        plotted_turn: None,
-        zone_change_count: zcc,
-    };
+    let template = template_object_v1;
     let unnamed_def = |owner: PlayerId| -> u16 {
         input.decklists[owner.index()]
             .iter()

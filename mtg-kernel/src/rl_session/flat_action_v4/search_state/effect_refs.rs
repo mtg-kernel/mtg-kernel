@@ -1924,6 +1924,7 @@ fn conflicts_in_scope(
             | HarvesterResolvedV1 { .. }
             | HarvesterCastAnnouncedV1 { .. }
             | HarvesterCastReversedV1 { .. }
+            | PaidCostCardCastAbortedV1 { .. }
             | ProgenitusInputV1 { .. }
             | ProgenitusShuffledV1 { .. }
             | LeylineOpeningV1 { .. }

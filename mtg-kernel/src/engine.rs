@@ -3185,6 +3185,20 @@ fn validate_cast_life_x(
     Ok(())
 }
 
+/// Whether any zone list names `object`: a player's library, hand,
+/// battlefield or graveyard, the exile or command zone, or a stack item's
+/// source.
+fn object_in_any_zone_list(state: &GameState, object: ObjectId) -> bool {
+    state.players.iter().any(|player| {
+        player.library.contains(&object)
+            || player.hand.contains(&object)
+            || player.battlefield.contains(&object)
+            || player.graveyard.contains(&object)
+    }) || state.exile.contains(&object)
+        || state.command.contains(&object)
+        || state.stack.iter().any(|item| item.source == object)
+}
+
 /// Authenticates a physical stack spell's unique `PublishedCastIdentityV1`
 /// receipt and checks `e7b.casters` against the receipt's controller (caster).
 /// Returns `Ok(Some((receipt_index, caster)))` when published, `Ok(None)` when
@@ -3246,24 +3260,35 @@ fn authenticated_spell_cast_receipt(
     // generation-0 tombstone with zeroed receipt generations while keeping the
     // adjacent `SpellCast` event linked to `item.source` and preserving owner,
     // controller, origin zone, stack item id, and `public_identity`.
+    //
+    // Issue #1030: the placeholder must be exactly the export's template
+    // object for its owner and printing (`template_object_v1`: printing name,
+    // default counters, `ObjectStateV4::from_card_def`, owner-controlled,
+    // untapped, generation 0 in `Zone::Command`), and no zone list may name
+    // it. The printing itself stays free: an unobserved reference is named
+    // after the owner's first decklist printing, not the spell's. A state
+    // can still carry a fabricated placeholder that equals the template;
+    // this validator cannot tell it from an export's, and the receipt's other
+    // fields are still checked against the live spell below.
+    //
+    // A hidden origin zone is not required. The export rewrites any receipt
+    // whose origin generation precedes the viewer's tracking span, and no
+    // proof here shows that a public (graveyard or exile) origin is always
+    // inside that span, so requiring one could refuse a genuine export.
     let is_infoset_tombstone = receipt.spell != item.source
         && receipt.origin_zone_change_count == 0
         && receipt.stack_zone_change_count == 0
         && state.objects.try_get(receipt.spell).is_some_and(|tomb| {
-            tomb.zone == Zone::Command
-                && tomb.zone_change_count == 0
-                && !state.command.contains(&receipt.spell)
-                && tomb.owner == source.owner
-                && tomb.controller == source.owner
-                && !tomb.tapped
-                && !tomb.summoning_sick
-                && tomb.damage == 0
-                && tomb.attachments.is_empty()
+            tomb.owner == source.owner
                 && !tomb.v4.is_token
-                && tomb.v4.face_down_v1.is_none()
-                && tomb.v4.spell_cast_origin.is_none()
-                && tomb.spell_copy_origin.is_none()
-                && tomb.plotted_turn.is_none()
+                && *tomb
+                    == crate::infoset_v1::export::template_object_v1(
+                        tomb.owner,
+                        tomb.card_def,
+                        Zone::Command,
+                        0,
+                    )
+                && !object_in_any_zone_list(state, receipt.spell)
         });
     let spell_incarnation_matches = (receipt.spell == item.source
         && receipt.origin_zone_change_count == origin.origin_zone_change_count
@@ -33533,7 +33558,9 @@ fn object_zone_changes_after(state: &GameState, object: ObjectId, event_at: usiz
                 ..
             } if *drawn == object => 1,
             CommittedEvent::SpellCast { spell, .. } if *spell == object => 1,
+            // An aborted cast: to the stack and back (issue #1030).
             CommittedEvent::HarvesterCastReversedV1 { restored, .. }
+            | CommittedEvent::PaidCostCardCastAbortedV1 { restored }
                 if restored.object == object =>
             {
                 2
@@ -36192,6 +36219,49 @@ fn abort_cast(state: &mut GameState, pending: PendingCast, cast_method: CastMeth
     reset_priority(state);
 }
 
+/// Issue #1030 (CR 400.7): an aborted cast moves its card to the stack and
+/// back, two zone changes that commit no `ZoneChange` or `SpellCast` event.
+/// A copy parent's payment check reconstructs a paid card's generation from
+/// later history (`object_zone_changes_after`), so an abort of a card that a
+/// stack item's `paid_cost_refs` names writes `PaidCostCardCastAbortedV1`
+/// for the incarnation it restored. Harvester's rollback marker, written
+/// since `rollback_from`, already counts the same two changes. An abort of
+/// any other card writes nothing, so a game whose aborted casts never name
+/// a live payment keeps its history bytes.
+fn record_paid_cost_card_cast_abort_v1(
+    state: &mut GameState,
+    spell: ObjectId,
+    rollback_from: usize,
+) {
+    let paid = state.stack.iter().any(|item| {
+        item.v4
+            .paid_cost_refs
+            .iter()
+            .any(|card| card.object == spell)
+    });
+    let reversed = state
+        .engine
+        .event_history
+        .range_v2(rollback_from..)
+        .any(|event| {
+            matches!(event, CommittedEvent::HarvesterCastReversedV1 { restored, .. }
+                if restored.object == spell)
+        });
+    if !paid || reversed {
+        return;
+    }
+    let live = state.objects.get(spell);
+    let restored = crate::effect::EffectObjectBinding {
+        object: spell,
+        expected_zone: live.zone,
+        expected_zone_change_count: live.zone_change_count,
+    };
+    state
+        .engine
+        .event_history
+        .push(CommittedEvent::PaidCostCardCastAbortedV1 { restored });
+}
+
 struct AbortedCastSceneV1 {
     was_face_down: bool,
     owner: PlayerId,
@@ -36288,7 +36358,9 @@ fn materialize_aborted_cast_v1(
             object.v4.on_adventure = true;
         }
     }
+    let rollback_from = state.engine.event_history.len();
     crate::effect::harvester_v1::record_rollback(state, pending, harvester_rollback);
+    record_paid_cost_card_cast_abort_v1(state, pending.spell, rollback_from);
     tinybones_v72::aborted(state, pending);
     AbortedCastSceneV1 {
         was_face_down,
@@ -42901,6 +42973,145 @@ mod tests {
         assert_eq!(state.players[0].graveyard, vec![bolt]);
     }
 
+    /// Issue #1030 follow-up (PR 1029 final read): an infoset export may
+    /// rewrite a cast receipt to name a generation-0 placeholder in no zone.
+    /// On a genuine default-build Chain Lightning copy offer, a fabricated
+    /// placeholder that differs from the export's template in one field, or
+    /// that a zone list names, or a receipt with one other field altered, is
+    /// refused without mutating state. A placeholder equal to the template is
+    /// accepted, whichever printing names it: the deliberate latitude, since
+    /// the validator cannot tell a fabricated template object from an
+    /// export's.
+    #[test]
+    fn chain_copy_receipt_placeholder_must_equal_the_infoset_template() {
+        type Receipt = crate::cast_identity_v1::ReceiptV1;
+        type Edit = fn(&mut GameState, ObjectId, &mut Receipt);
+        let mut state = ready_game_in_main1(1);
+        let chain = put_in_hand(&mut state, PlayerId::P0, "Chain Lightning");
+        step(&mut state, Action::CastSpell(chain)).unwrap();
+        step(
+            &mut state,
+            Action::ChooseTarget(Target::Player(PlayerId::P1)),
+        )
+        .unwrap();
+        assert!(matches!(
+            pass_until_stack_resolves(&mut state),
+            Decision::ChooseSpellCopyPayment { spell, .. } if spell == chain
+        ));
+        let stack_item_id = state.stack.last().unwrap().v4.stack_item_id;
+        let receipt_at = state
+            .engine
+            .event_history
+            .iter()
+            .position(|event| {
+                matches!(event, CommittedEvent::PublishedCastIdentityV1 { receipt }
+                    if receipt.stack_item_id == stack_item_id)
+            })
+            .expect("Chain Lightning has a cast identity receipt");
+        let chain_def = state.objects.get(chain).card_def;
+        let mountain_def = card_id_by_name("Mountain").unwrap();
+
+        // The receipt rewritten as the export writes it, naming a template
+        // placeholder for `def`; `edit` then alters one thing.
+        let placeholder_state = |def: u16, edit: Edit| {
+            let mut forged = state.clone();
+            let placeholder = forged
+                .objects
+                .push(crate::infoset_v1::export::template_object_v1(
+                    PlayerId::P0,
+                    def,
+                    Zone::Command,
+                    0,
+                ));
+            let CommittedEvent::PublishedCastIdentityV1 { receipt } =
+                &forged.engine.event_history[receipt_at]
+            else {
+                unreachable!();
+            };
+            let mut receipt = *receipt;
+            receipt.spell = placeholder;
+            receipt.origin_zone_change_count = 0;
+            receipt.stack_zone_change_count = 0;
+            edit(&mut forged, placeholder, &mut receipt);
+            forged.engine.event_history[receipt_at] =
+                CommittedEvent::PublishedCastIdentityV1 { receipt };
+            forged
+        };
+        let refused: [(&str, Edit); 15] = [
+            ("placeholder controller", |s, p, _| {
+                s.objects.get_mut(p).controller = PlayerId::P1
+            }),
+            ("placeholder owner", |s, p, _| {
+                s.objects.get_mut(p).owner = PlayerId::P1
+            }),
+            ("placeholder owner and controller", |s, p, _| {
+                let object = s.objects.get_mut(p);
+                object.owner = PlayerId::P1;
+                object.controller = PlayerId::P1;
+            }),
+            ("receipt stack item id", |_, _, r| {
+                r.stack_item_id = crate::ids::StackItemId(r.stack_item_id.0 + 100)
+            }),
+            ("receipt origin generation", |_, _, r| {
+                r.origin_zone_change_count = 1
+            }),
+            ("receipt stack generation", |_, _, r| {
+                r.stack_zone_change_count = 1
+            }),
+            ("placeholder generation", |s, p, _| {
+                s.objects.get_mut(p).zone_change_count = 1
+            }),
+            ("listed in the command zone", |s, p, _| s.command.push(p)),
+            ("listed in a graveyard", |s, p, _| {
+                s.players[0].graveyard.push(p)
+            }),
+            ("listed in exile", |s, p, _| s.exile.push(p)),
+            ("placeholder zone", |s, p, _| {
+                s.objects.get_mut(p).zone = Zone::Exile
+            }),
+            ("placeholder tapped", |s, p, _| {
+                s.objects.get_mut(p).tapped = true
+            }),
+            ("placeholder name", |s, p, _| {
+                s.objects.get_mut(p).name = "Forged".into()
+            }),
+            ("placeholder counters", |s, p, _| {
+                s.objects.get_mut(p).counters.stun = 1
+            }),
+            ("placeholder object state", |s, p, _| {
+                s.objects.get_mut(p).v4.is_token = true
+            }),
+        ];
+        for (label, edit) in refused {
+            let mut forged = placeholder_state(chain_def, edit);
+            let before = forged.clone();
+            assert!(
+                validate_spell_stack_source(&forged, forged.stack.last().unwrap()).is_err(),
+                "{label}"
+            );
+            assert!(
+                step(&mut forged, Action::ChooseSpellCopyPayment(false)).is_err(),
+                "{label}"
+            );
+            assert_eq!(forged, before, "{label}");
+        }
+
+        // A template placeholder for the spell's printing, or for another
+        // printing (an unobserved reference's), is accepted.
+        for def in [chain_def, mountain_def] {
+            let mut accepted = placeholder_state(def, |_, _, _| {});
+            validate_spell_stack_source(&accepted, accepted.stack.last().unwrap())
+                .unwrap_or_else(|error| panic!("template placeholder {def}: {error}"));
+            step(&mut accepted, Action::ChooseSpellCopyPayment(false)).unwrap();
+            assert!(accepted.engine.pending_spell_copy.is_none());
+            assert_eq!(accepted.engine.halted, None);
+        }
+
+        // The genuine offer stays accepted.
+        step(&mut state, Action::ChooseSpellCopyPayment(false)).unwrap();
+        assert_eq!(state.engine.halted, None);
+    }
+
     #[test]
     fn chain_lightning_unpayable_decline_has_the_same_no_copy_terminal_shape() {
         let mut state = ready_game_in_main1(1);
@@ -47165,6 +47376,137 @@ mod tests {
 
         // 3. Unchanged genuine state stays accepted.
         assert!(step(&mut state, Action::ChooseSpellCopyPayment(false)).is_ok());
+    }
+
+    /// Issue #1030: an aborted cast moves its card to the stack and back
+    /// (+2 generations) with no `ZoneChange` or `SpellCast` event. An escape
+    /// payment card that returns to hand and has a cast of it aborted while
+    /// the escaped Chain Lightning waits must still bind its generation-2
+    /// exile ref, so the abort writes `PaidCostCardCastAbortedV1` and the
+    /// copy offer proceeds; refs forged to the generation an uncounted abort
+    /// implies, or to the stale graveyard one, stay refused. An abort of a
+    /// card no payment names writes no event.
+    #[cfg(feature = "eternal-fixtures")]
+    #[test]
+    fn chain_copy_escape_counts_an_aborted_cast_of_a_paid_card() {
+        let mut state = ready_game_in_main1(0);
+        put_on_battlefield(&mut state, PlayerId::P0, "Underworld Breach");
+        put_on_battlefield(&mut state, PlayerId::P1, "Great Furnace");
+        put_on_battlefield(&mut state, PlayerId::P1, "Great Furnace");
+        let chain = put_in_graveyard(&mut state, PlayerId::P0, "Chain Lightning");
+        let mut fodder = Vec::new();
+        for name in ["Lightning Bolt", "Mountain", "Mountain"] {
+            let card = put_in_hand(&mut state, PlayerId::P0, name);
+            event::propose_and_commit(
+                &mut state,
+                ProposedEvent::zone_change(card, Zone::Graveyard),
+            );
+            assert_eq!(state.objects.get(card).zone_change_count, 1);
+            fodder.push(card);
+        }
+        let bolt = fodder[0];
+
+        state.players[0].mana_pool[ManaColor::R.pool_index()] = 1;
+        step(&mut state, Action::CastSpell(chain)).unwrap();
+        let mut to_exile = fodder.clone();
+        loop {
+            match advance_until_decision(&mut state) {
+                Decision::ChooseTargets { .. } => step(
+                    &mut state,
+                    Action::ChooseTarget(Target::Player(PlayerId::P1)),
+                )
+                .unwrap(),
+                Decision::ChooseCostTargets { candidates, .. } => {
+                    let pick = to_exile
+                        .iter()
+                        .copied()
+                        .find(|id| candidates.contains(id))
+                        .expect("expected escape fodder in candidates");
+                    to_exile.retain(|&id| id != pick);
+                    step(&mut state, Action::ChooseCostTarget(pick)).unwrap();
+                }
+                Decision::CastSpellOrPass { .. } => break,
+                other => panic!("unexpected decision escaping Chain Lightning: {other:?}"),
+            }
+        }
+        let bolt_ref = state
+            .stack
+            .last()
+            .unwrap()
+            .v4
+            .paid_cost_refs
+            .iter()
+            .position(|card| card.object == bolt)
+            .expect("Lightning Bolt paid the escape cost");
+        assert_eq!(state.objects.get(bolt).zone, Zone::Exile);
+        assert_eq!(state.objects.get(bolt).zone_change_count, 2);
+
+        // A genuine later move of the paid card (exile -> hand), then,
+        // holding priority, a cast of it that aborts back to hand.
+        event::propose_and_commit(&mut state, ProposedEvent::zone_change(bolt, Zone::Hand));
+        assert_eq!(state.objects.get(bolt).zone_change_count, 3);
+        let abort = |state: &mut GameState, card: ObjectId| {
+            state.players[0].mana_pool[ManaColor::R.pool_index()] = 1;
+            step(state, Action::CastSpell(card)).unwrap();
+            validate_pending_cast(state, state.engine.pending_cast.as_ref().unwrap()).unwrap();
+            let pending = state.engine.pending_cast.take().unwrap();
+            assert_eq!(pending.spell, card);
+            let history_len = state.engine.event_history.len();
+            abort_cast(state, pending, CastMethodV4::Normal);
+            assert_eq!(state.engine.halted, None);
+            assert_eq!(state.objects.get(card).zone, Zone::Hand);
+            history_len
+        };
+
+        // Unpaid card: the abort writes no event.
+        let other = put_in_hand(&mut state, PlayerId::P0, "Lightning Bolt");
+        let history_len = abort(&mut state, other);
+        assert_eq!(state.engine.event_history.len(), history_len);
+
+        // Paid card: exactly one marker for the restored incarnation.
+        let history_len = abort(&mut state, bolt);
+        assert_eq!(state.objects.get(bolt).zone_change_count, 5);
+        assert_eq!(state.engine.event_history.len(), history_len + 1);
+        assert_eq!(
+            state.engine.event_history.get(history_len),
+            Some(&CommittedEvent::PaidCostCardCastAbortedV1 {
+                restored: crate::effect::EffectObjectBinding {
+                    object: bolt,
+                    expected_zone: Zone::Hand,
+                    expected_zone_change_count: 5,
+                },
+            })
+        );
+        assert_eq!(state.stack.len(), 1);
+        assert!(matches!(
+            pass_until_stack_resolves(&mut state),
+            Decision::ChooseSpellCopyPayment { .. }
+        ));
+
+        // Forged refs stay refused without mutating state: 4 is what an
+        // uncounted abort would imply (5 - 1 recorded move), 1 the stale
+        // graveyard generation.
+        for forged_zcc in [1, 3, 4] {
+            let mut forged = state.clone();
+            forged.stack.last_mut().unwrap().v4.paid_cost_refs[bolt_ref].zone_change_count =
+                forged_zcc;
+            let before = forged.clone();
+            assert!(step(&mut forged, Action::ChooseSpellCopyPayment(false)).is_err());
+            assert_eq!(forged, before);
+        }
+        // Dropping the marker undercounts by two and refuses the genuine ref.
+        let mut unmarked = state.clone();
+        let mut events: Vec<CommittedEvent> =
+            unmarked.engine.event_history.iter().cloned().collect();
+        events.remove(history_len);
+        unmarked.engine.event_history = events.into();
+        let before = unmarked.clone();
+        assert!(step(&mut unmarked, Action::ChooseSpellCopyPayment(false)).is_err());
+        assert_eq!(unmarked, before);
+
+        // The genuine copy offer proceeds.
+        step(&mut state, Action::ChooseSpellCopyPayment(false)).unwrap();
+        assert_eq!(state.engine.halted, None);
     }
 
     /// Issue #987 review round 1, finding 2: for a face-up parent spell, the
