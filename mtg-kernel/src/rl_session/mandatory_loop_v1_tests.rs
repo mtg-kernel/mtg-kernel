@@ -14,8 +14,9 @@
 //! Controls: the same loop where P1 keeps an untapped Forest (a mana ability
 //! in every window, so every repetition offers a real decision) runs to the
 //! session's decision cap; Bloodthirsty Conqueror with Marauding Blight-Priest
-//! is a mandatory drain whose life totals change every repetition, which ends
-//! with its winner even after far more forced transitions than the gate.
+//! is a real mandatory drain whose life totals change every repetition, which
+//! ends with its winner, and a hand-built drain on one permanent does the same
+//! after far more forced transitions than the gate.
 
 use super::*;
 use crate::card_def::card_id_by_name;
@@ -387,11 +388,10 @@ fn the_same_loop_with_a_real_option_every_repetition_is_never_adjudicated() {
 }
 
 #[test]
-fn a_finite_mandatory_drain_ends_with_its_winner_past_the_gate() {
+fn the_real_two_permanent_drain_ends_with_its_winner() {
     bounded(|| {
         let (mut state, barrens) =
             board(&["Marauding Blight-Priest", "Bloodthirsty Conqueror"], &[]);
-        state.players[1].life = 400;
         let mut surface = counting_surface();
         play_barrens(&mut surface, &mut state, barrens);
         assert_eq!(
@@ -402,7 +402,54 @@ fn a_finite_mandatory_drain_ends_with_its_winner_past_the_gate() {
         );
         assert_eq!(state.mandatory_loop_draw_v1, None);
         assert_eq!(state.players[1].life, 0);
-        assert!(state.players[0].life > 400, "{}", state.players[0].life);
+        assert!(state.players[0].life > 20, "{}", state.players[0].life);
+    });
+}
+
+/// "Each opponent loses 1 life and you gain 1 life."
+fn drain_one() -> EffectOp {
+    EffectOp::Sequence(vec![
+        EffectOp::LoseLife {
+            player: PlayerRef::Opponent,
+            amount: 1,
+        },
+        EffectOp::GainLife {
+            player: PlayerRef::Controller,
+            amount: 1,
+        },
+    ])
+}
+
+const HAND_BUILT_DRAIN: [TriggeredAbilityDef; 1] = [TriggeredAbilityDef {
+    condition: TriggerCondition::ControllerGainsLife,
+    home_zone: Zone::Battlefield,
+    intervening_if_kicked: false,
+    intervening_if_controls_another_source_card: false,
+    face_index: 0,
+    effect: drain_one,
+}];
+
+#[test]
+fn a_finite_mandatory_drain_ends_with_its_winner_past_the_gate() {
+    // Bloodthirsty Conqueror revalidates every earlier loss batch of the turn
+    // on each advance, so a long real drain is slow; the same mandatory
+    // re-trigger on one hand-built permanent ("Whenever you gain life, each
+    // opponent loses 1 life and you gain 1 life") runs from 1,000 life.
+    bounded(|| {
+        let _drain = TestTriggersV1::install(card_id_by_name(HOST).unwrap(), &HAND_BUILT_DRAIN);
+        let (mut state, barrens) = board(&[HOST], &[]);
+        state.players[1].life = 1_000;
+        let mut surface = counting_surface();
+        play_barrens(&mut surface, &mut state, barrens);
+        assert_eq!(
+            surface.next_decision(&mut state),
+            SurfaceDecision::Decision(Decision::GameOver {
+                winner: Some(PlayerId::P0)
+            })
+        );
+        assert_eq!(state.mandatory_loop_draw_v1, None);
+        assert_eq!(state.players[1].life, 0);
+        assert!(state.players[0].life > 1_000, "{}", state.players[0].life);
         let forced = forced_transitions(surface.suppression_counts());
         assert!(
             forced > u64::from(UNCHECKED_FORCED_TRANSITIONS_V1),
