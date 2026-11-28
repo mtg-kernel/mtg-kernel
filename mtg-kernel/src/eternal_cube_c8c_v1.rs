@@ -1394,7 +1394,8 @@ fn prune(state: &mut GameState) {
     let keep_absorbing: Vec<bool> = c8c
         .absorbing_copies
         .iter()
-        .map(|copy| link_live_in(state, copy.host, Zone::Battlefield))
+        // A phased-out Absorbing Man is still that copy (702.26d).
+        .map(|copy| crate::state::battlefield_incarnation_holds(state, copy.host))
         .collect();
 
     let c8c = c8c_state(state);

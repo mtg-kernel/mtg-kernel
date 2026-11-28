@@ -380,6 +380,7 @@ fn build(
             turn_schedule: None,
             ward_payments: None,
             staged_escape: None,
+            phased_out: None,
         },
         own_hand: base.own_hand,
         known_library_cards: base.known_library_cards,

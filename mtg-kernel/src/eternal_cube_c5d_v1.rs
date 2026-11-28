@@ -825,7 +825,8 @@ fn prune_influence(state: &mut GameState) {
         .iter()
         .copied()
         .filter(|(link, _)| {
-            link_live_in(state, *link, Zone::Battlefield)
+            // A phased-out Palantir keeps its counters (702.26d).
+            crate::state::battlefield_incarnation_holds(state, *link)
                 || state.stack.iter().any(|item| {
                     item.v4.ability_source_contract.is_some_and(|source| {
                         source.source == link.object

@@ -3792,6 +3792,14 @@ fn lifelink_gain_for(state: &GameState, event: &ProposedEvent) -> Option<(Player
             .then_some((facts.source.controller, damage.amount));
     }
     let source = state.objects.try_get(damage.source)?;
+    // A phased-out source is treated as though it does not exist (702.26b):
+    // its lifelink is the last known information from when it phased out.
+    #[cfg(feature = "eternal-fixtures")]
+    if let Some(lifelink) =
+        crate::eternal_e5a_v1::phasing::last_known_lifelink(state, damage.source)
+    {
+        return lifelink.then_some((source.controller, damage.amount));
+    }
     crate::engine::has_effective_keyword(state, damage.source, crate::card_def::Keywords::LIFELINK)
         .then_some((source.controller, damage.amount))
 }
@@ -8840,7 +8848,8 @@ pub fn log_initiative_trigger(
     if !crate::engine::source_card_def_matches(state, source, live.card_def)
         || live.owner != source.owner
         || live.zone_change_count < source.zone_change_count
-        || (live.zone_change_count == source.zone_change_count && live.zone != source.zone)
+        || (live.zone_change_count == source.zone_change_count
+            && !crate::state::incarnation_zone_holds(state, source.source, source.zone))
         || crate::card_def::CARD_DEFS
             .get(source.card_def as usize)
             .is_none_or(|definition| {
@@ -8893,7 +8902,8 @@ pub fn log_monarch_trigger(
     if !card_def_matches
         || live.owner != source.owner
         || live.zone_change_count < source.zone_change_count
-        || (live.zone_change_count == source.zone_change_count && live.zone != source.zone)
+        || (live.zone_change_count == source.zone_change_count
+            && !crate::state::incarnation_zone_holds(state, source.source, source.zone))
     {
         return Err("Monarch designation source contract is malformed".to_string());
     }
@@ -12114,7 +12124,8 @@ pub(crate) fn tutelage_observers_v1(
             || (!crate::engine::source_card_def_matches(state, *source, object.card_def)
                 && !crate::sampled_history_v1::allows_rebound_source(state, index, *source))
             || object.zone_change_count < source.zone_change_count
-            || (object.zone_change_count == source.zone_change_count && object.zone != source.zone)
+            || (object.zone_change_count == source.zone_change_count
+                && !crate::state::incarnation_zone_holds(state, source.source, source.zone))
         {
             return Err("Tutelage captured source changed".into());
         }
@@ -12325,7 +12336,7 @@ pub(crate) fn lathril_damage_v1(
                     && !crate::sampled_history_v1::allows_rebound_source(state, index, *source))
                 || object.zone_change_count < source.zone_change_count
                 || (object.zone_change_count == source.zone_change_count
-                    && object.zone != source.zone)
+                    && !crate::state::incarnation_zone_holds(state, source.source, source.zone))
         })
     {
         return Err("Lathril original combat/source capture changed".into());

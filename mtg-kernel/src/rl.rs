@@ -1135,6 +1135,92 @@ pub struct PublicObservationProjectionV5 {
     /// chosen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub staged_escape: Option<PublicStagedEscapeV1>,
+    /// The phased-out permanents (702.26), under the public shroud contract
+    /// (Limited schema 5, and the registered Premodern ordered profile's
+    /// stable scene), in the order they phased out. A phased-out
+    /// permanent is in no `battlefield` list but keeps its battlefield
+    /// incarnation (702.26d): every reference to it (a stack ability's source,
+    /// a target, an attachment or linked-exile relation) names that
+    /// incarnation, and so does its card here. Absent while nothing is
+    /// phased out; every other observation refuses a game with a phased-out
+    /// permanent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phased_out: Option<Vec<PublicPhasedOutPermanentV1>>,
+}
+
+/// A phased-out permanent (Limited schema 5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicPhasedOutPermanentV1 {
+    /// The permanent as it is while phased out: its counters, damage, tapped
+    /// state and controller are kept (702.26d). `stable.zone` is the
+    /// battlefield.
+    pub card: CardPublicV2,
+    /// It phased out indirectly with the permanent it is attached to, and
+    /// phases in with it, still attached (702.26g). Absent for a permanent
+    /// that phased out directly, which phases in during its controller's
+    /// next untap step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phased_out_with: Option<CardStableRefV1>,
+    /// It phased out directly while attached to this permanent, and phases
+    /// in attached to it if it is still the same permanent (702.26i).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phases_in_attached_to: Option<CardStableRefV1>,
+}
+
+/// Schema 5's phased-out permanents (`PublicObservationProjectionV5::phased_out`).
+fn public_phased_out_v1(
+    state: &GameState,
+    text_mode: ObservationTextModeV2,
+) -> Result<Option<Vec<PublicPhasedOutPermanentV1>>> {
+    let records = crate::eternal_e5a_v1::phasing::records(state);
+    if records.is_empty() {
+        return Ok(None);
+    }
+    let still = |link: crate::state::ObjectLinkV4| -> Result<Option<CardStableRefV1>> {
+        let live = state
+            .objects
+            .try_get(link.object)
+            .ok_or_else(|| RlContractError("phased-out relation names a missing object".into()))?;
+        if live.zone_change_count != link.zone_change_count
+            || !crate::state::incarnation_zone_holds(state, link.object, Zone::Battlefield)
+        {
+            return Ok(None);
+        }
+        card_ref(state, link.object).map(Some)
+    };
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        let phased_out_with = match record.with {
+            Some(host) => Some(still(host)?.ok_or_else(|| {
+                RlContractError("indirectly phased-out permanent lost its host".into())
+            })?),
+            None => None,
+        };
+        let phases_in_attached_to = match record.attached_to {
+            Some(host) => still(host)?,
+            None => None,
+        };
+        out.push(PublicPhasedOutPermanentV1 {
+            card: public_card_v2(state, record.object.object, text_mode)?,
+            phased_out_with,
+            phases_in_attached_to,
+        });
+    }
+    Ok(Some(out))
+}
+
+/// Every observation but those with the schema 5 public projection
+/// (`phased_out`: schema 5's and the registered Premodern ordered profile's)
+/// refuses a phased-out permanent: it would read as though the permanent did
+/// not exist, so two states differing only in it (its counters) would read
+/// the same.
+fn refuse_unrepresented_phasing(state: &GameState, text_mode: ObservationTextModeV2) -> Result<()> {
+    if !text_mode.accepts_public_shroud() && crate::eternal_e5a_v1::phasing::any(state) {
+        return Err(RlContractError(
+            "phased-out permanents require the schema 5 public phasing record".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// An Escape cast its caster is staging (Limited schema 5). The legacy
@@ -2492,6 +2578,7 @@ pub fn observe_v1(
     acting_player: PlayerId,
     step_index: u64,
 ) -> Result<ObservationV1> {
+    refuse_unrepresented_phasing(state, ObservationTextModeV2::FullArtifact)?;
     if crate::eternal_opening_v1::requires_successor(state) {
         return Err(RlContractError(
             "Eternal opening actions require their consumer successor".into(),
@@ -2781,6 +2868,7 @@ pub fn observe_premodern_ordered_registered_v1(
             turn_schedule: None,
             ward_payments: None,
             staged_escape: None,
+            phased_out: public_phased_out_v1(state, text_mode)?,
         };
         Some(NumericRegisteredStableSceneV1 {
             projection,
@@ -3082,6 +3170,7 @@ fn build_observation_common_v2_fishing_v39_conqueror_v49_fake_v50(
             "Eternal opening actions require their consumer successor".into(),
         ));
     }
+    refuse_unrepresented_phasing(state, text_mode)?;
     // Only the schema 5 policy observation and the registered Premodern
     // ordered profile represent Meddling Mage's names (`meddling_mage_names`,
     // wave S1k). They never read a pending entry's saved world or answers, and
@@ -3720,6 +3809,11 @@ fn build_policy_observation_v5(request: PolicyObservationBuildV5<'_>) -> Result<
     } else {
         None
     };
+    let phased_out = if public_contract {
+        public_phased_out_v1(state, text_mode)?
+    } else {
+        None
+    };
     Ok(ObservationV5 {
         schema_version: OBSERVATION_SCHEMA_VERSION_V5,
         kernel_version: base.kernel_version,
@@ -3769,6 +3863,7 @@ fn build_policy_observation_v5(request: PolicyObservationBuildV5<'_>) -> Result<
             turn_schedule,
             ward_payments,
             staged_escape,
+            phased_out,
         },
         own_hand: base.own_hand,
         known_library_cards: base.known_library_cards,
@@ -6557,6 +6652,7 @@ fn build_policy_observation_storage_common_fishing_v39_conqueror_v49_fake_v50(
             turn_schedule: None,
             ward_payments: None,
             staged_escape: None,
+            phased_out: None,
         },
         own_hand: base.own_hand,
         known_library_cards: base.known_library_cards,
@@ -10769,12 +10865,21 @@ pub(crate) fn card_ref(state: &GameState, id: ObjectId) -> Result<CardStableRefV
             ));
         }
     }
+    // A phased-out permanent keeps its battlefield incarnation (702.26d).
+    // Every public reference to it names that incarnation, as its stack
+    // abilities, targets and relations do; schema 5 lists it in
+    // `phased_out`, and every other observation refuses the state.
+    let zone = if object.zone == Zone::Command && crate::state::object_is_phased_out(state, id) {
+        Zone::Battlefield
+    } else {
+        object.zone
+    };
     Ok(CardStableRefV1 {
         arena_id: id.0,
         card_db_id: projected_card_def(state, id, object.zone_change_count),
         owner: object.owner.into(),
         controller: object.controller.into(),
-        zone: object.zone,
+        zone,
         zone_change_count: object.zone_change_count,
     })
 }
@@ -10832,12 +10937,17 @@ fn visible_card_ref(
         .objects
         .try_get(id)
         .ok_or_else(|| RlContractError(format!("object id {} missing", id.0)))?;
-    let visible = object_is_live_in_zone_index(state, id)?
-        && match object.zone {
-            Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack | Zone::Command => true,
-            Zone::Hand => object.owner == acting_player,
-            Zone::Library => false,
-        };
+    // A phased-out permanent is in no zone list but stays public.
+    let phased_out = object.zone == Zone::Command && crate::state::object_is_phased_out(state, id);
+    let visible = phased_out
+        || object_is_live_in_zone_index(state, id)?
+            && match object.zone {
+                Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack | Zone::Command => {
+                    true
+                }
+                Zone::Hand => object.owner == acting_player,
+                Zone::Library => false,
+            };
     if visible {
         Ok(Some(card_ref(state, id)?))
     } else {
@@ -12360,10 +12470,15 @@ fn validate_linked_exile_records_public_v4(state: &GameState) -> Result<()> {
             // battlefield incarnation keeps its linked exile while a copy
             // effect it recorded (Saheeli's -2 on Portable Hole) changes its
             // definition.
+            // A source that phased out keeps that incarnation (702.26d).
             _ => {
                 source.card_def == record.source.card_def
-                    || (source.zone == Zone::Battlefield
-                        && source.zone_change_count == record.source.zone_change_count
+                    || (source.zone_change_count == record.source.zone_change_count
+                        && crate::state::incarnation_zone_holds(
+                            state,
+                            record.source.source,
+                            Zone::Battlefield,
+                        )
                         && crate::engine::source_card_def_matches(
                             state,
                             record.source,
@@ -12394,12 +12509,15 @@ fn validate_linked_exile_records_public_v4(state: &GameState) -> Result<()> {
         }
         if source.zone_change_count == record.source.zone_change_count
             && exiled.zone_change_count == record.exiled_zone_change_count
-            && (source.zone != Zone::Battlefield
-                || exiled.v4.exiled_by
-                    != Some(crate::state::ObjectLinkV4 {
-                        object: record.source.source,
-                        zone_change_count: record.source.zone_change_count,
-                    }))
+            && (!crate::state::incarnation_zone_holds(
+                state,
+                record.source.source,
+                Zone::Battlefield,
+            ) || exiled.v4.exiled_by
+                != Some(crate::state::ObjectLinkV4 {
+                    object: record.source.source,
+                    zone_change_count: record.source.zone_change_count,
+                }))
         {
             return Err(RlContractError(
                 "live linked-exile source lost its public object relation".to_string(),

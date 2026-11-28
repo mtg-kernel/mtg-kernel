@@ -426,7 +426,9 @@ pub(crate) fn begin_cleanup(state: &mut GameState) {
     }
     let copies = std::mem::take(&mut c5c_state(state).woodland_copies);
     for link in copies {
-        if link_live_in(state, link, Zone::Battlefield) {
+        // A phased-out Woodland's copy effect still ends (702.26e): it
+        // phases in as its own card.
+        if crate::state::battlefield_incarnation_holds(state, link) {
             crate::eternal_legacy_e7a_v1::end_copy_before_departure(state, link.object);
         }
     }
@@ -573,15 +575,16 @@ fn prune(state: &mut GameState) {
         .iter()
         .copied()
         .filter(|&(aura, creature)| {
-            link_live_in(state, aura, Zone::Battlefield)
-                || creature.is_some_and(|link| link_live_in(state, link, Zone::Battlefield))
+            crate::state::battlefield_incarnation_holds(state, aura)
+                || creature
+                    .is_some_and(|link| crate::state::battlefield_incarnation_holds(state, link))
         })
         .collect::<Vec<_>>();
     let woodland_copies = c5c
         .woodland_copies
         .iter()
         .copied()
-        .filter(|&link| link_live_in(state, link, Zone::Battlefield))
+        .filter(|&link| crate::state::battlefield_incarnation_holds(state, link))
         .collect::<Vec<_>>();
     let c5c = c5c_state(state);
     c5c.buybacks = buybacks;

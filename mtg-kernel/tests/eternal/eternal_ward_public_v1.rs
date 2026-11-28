@@ -731,7 +731,6 @@ mod positions {
     /// while its Ward trigger waits. Phasing out is not leaving the
     /// battlefield (702.26d) and the trigger still resolves (113.7a).
     #[test]
-    #[ignore = "halts first (InvalidEffectContinuation) in the shared stack-item checks for a phased-out target and ability source (validated_stack_item_target_spec, validate_ability_source_contract), which the stack-target branch fixes; this branch fixes only the Ward source check"]
     fn ward_of_a_phased_out_source_still_resolves() {
         let mut state = game();
         let kappa = put(&mut state, P0, "Kappa Cannoneer", Zone::Battlefield);

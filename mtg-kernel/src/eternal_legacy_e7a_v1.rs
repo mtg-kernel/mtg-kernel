@@ -2661,8 +2661,10 @@ fn prune(state: &mut GameState, events: &[CommittedEvent]) {
         .iter()
         .copied()
         .filter(|(aura, creature)| {
-            link_live_in(state, *creature, Zone::Battlefield)
-                && (link_live_in(state, *aura, Zone::Battlefield)
+            // An animated creature that phases out takes Animate Dead with it
+            // (702.26g); the link holds until one of them leaves.
+            crate::state::battlefield_incarnation_holds(state, *creature)
+                && (crate::state::battlefield_incarnation_holds(state, *aura)
                     || events.iter().any(|event| {
                         matches!(
                             event,
@@ -2705,7 +2707,7 @@ fn prune(state: &mut GameState, events: &[CommittedEvent]) {
         .iter()
         .copied()
         .filter(|&link| {
-            link_live_in(state, link, Zone::Battlefield)
+            crate::state::battlefield_incarnation_holds(state, link)
                 && state.objects.get(link.object).v4.face_down_v1.is_some()
         })
         .collect::<Vec<_>>();

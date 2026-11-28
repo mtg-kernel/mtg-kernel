@@ -1325,6 +1325,49 @@ impl StackTargetContractV4 {
     }
 }
 
+/// Whether `object` is phased out (702.26). A phased-out permanent keeps its
+/// battlefield incarnation: phasing is not a zone change (702.26d). It sits
+/// in the command-zone marker, in no zone list, and is treated as though it
+/// does not exist (702.26b). Only the eternal catalog has phasing cards
+/// (Talon Gates of Madara, Vision Charm).
+pub fn object_is_phased_out(state: &GameState, object: ObjectId) -> bool {
+    #[cfg(feature = "eternal-fixtures")]
+    {
+        crate::eternal_e5a_v1::phasing::phased_out(state, object)
+    }
+    #[cfg(not(feature = "eternal-fixtures"))]
+    {
+        let _ = (state, object);
+        false
+    }
+}
+
+/// Whether the live `object` is still in `recorded`, the zone a contract
+/// captured for its current incarnation: it is there, or the contract
+/// captured it on the battlefield and it has since phased out, which is not
+/// a zone change (702.26d). A same-incarnation object in any other zone is
+/// malformed state. Legality is a separate question: a phased-out permanent
+/// is not a legal target and cannot be affected (702.26b).
+pub fn incarnation_zone_holds(state: &GameState, object: ObjectId, recorded: Zone) -> bool {
+    state.objects.try_get(object).is_some_and(|live| {
+        live.zone == recorded
+            || (recorded == Zone::Battlefield
+                && live.zone == Zone::Command
+                && object_is_phased_out(state, object))
+    })
+}
+
+/// Whether `link` still names its battlefield incarnation: on the
+/// battlefield, or phased out (702.26d). Records an effect keeps about a
+/// permanent survive while it is phased out and apply again when it phases
+/// in, unless their duration is "for as long as" (702.26e).
+pub fn battlefield_incarnation_holds(state: &GameState, link: ObjectLinkV4) -> bool {
+    state.objects.try_get(link.object).is_some_and(|live| {
+        live.zone_change_count == link.zone_change_count
+            && incarnation_zone_holds(state, link.object, Zone::Battlefield)
+    })
+}
+
 /// Validates immutable target provenance without asking whether the target is
 /// still legal now. A later incarnation is an ordinary stale target and may
 /// fizzle; a contract from the future, an impossible announcement zone, or a
@@ -1650,14 +1693,20 @@ fn stack_target_contract_shape(
                 // so its one battlefield generation is one, and a token never
                 // re-enters: a later live generation is an ordinary stale
                 // target.
+                // A phased-out token still exists at that generation
+                // (702.26d).
                 zone == Zone::Battlefield
                     && zone_change_count == 1
                     && live.v4.is_token
                     && live.zone_change_count >= 1
-                    && (live.zone_change_count != 1 || live.zone == Zone::Battlefield)
+                    && (live.zone_change_count != 1
+                        || incarnation_zone_holds(state, object, Zone::Battlefield))
             } else {
+                // A target that phased out keeps its incarnation: it is an
+                // illegal target now (702.26b), not malformed provenance.
                 zone_change_count <= live.zone_change_count
-                    && (zone_change_count != live.zone_change_count || zone == live.zone)
+                    && (zone_change_count != live.zone_change_count
+                        || incarnation_zone_holds(state, object, zone))
             }
     })
 }
@@ -3829,20 +3878,36 @@ impl GameState {
     /// Checks the exact two-way attachment graph. Restored state must never
     /// accept a self-link or a dangling, stale, duplicate, or asymmetric relation.
     pub fn validate_attachment_relations(&self) -> Result<(), ObjectId> {
-        for (id, object) in self.objects.iter() {
-            if object.zone != Zone::Battlefield
-                && (object.v4.attached_to.is_some() || !object.attachments.is_empty())
-            {
-                return Err(id);
+        // An attachment and the permanent it is attached to are both on the
+        // battlefield, or both phased out: a permanent's attachments phase
+        // out with it and stay attached (702.26g), and an attachment that
+        // phases out on its own is attached to nothing (702.26i).
+        let present = |id: ObjectId, object: &GameObject| {
+            if object.zone == Zone::Battlefield {
+                Some(false)
+            } else if object_is_phased_out(self, id) {
+                Some(true)
+            } else {
+                None
             }
+        };
+        for (id, object) in self.objects.iter() {
+            let has_relation = object.v4.attached_to.is_some() || !object.attachments.is_empty();
+            let phased = if has_relation {
+                let Some(phased) = present(id, object) else {
+                    return Err(id);
+                };
+                phased
+            } else {
+                false
+            };
             if let Some(link) = object.v4.attached_to {
                 let Some(host) = self.objects.try_get(link.object) else {
                     return Err(id);
                 };
                 // CR 301.5c, 301.6, 303.4d forbid self-links and attachment cycles.
                 if link.object == id
-                    || object.zone != Zone::Battlefield
-                    || host.zone != Zone::Battlefield
+                    || present(link.object, host) != Some(phased)
                     || host.zone_change_count != link.zone_change_count
                     || host
                         .attachments
@@ -3875,8 +3940,7 @@ impl GameState {
                 let Some(attachment) = self.objects.try_get(source) else {
                     return Err(id);
                 };
-                if object.zone != Zone::Battlefield
-                    || attachment.zone != Zone::Battlefield
+                if present(source, attachment) != Some(phased)
                     || attachment.v4.attached_to
                         != Some(ObjectLinkV4 {
                             object: id,
