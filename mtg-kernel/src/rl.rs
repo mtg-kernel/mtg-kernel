@@ -4386,30 +4386,30 @@ pub(crate) fn observe_policy_v6_unhashed_for_cube_flat_policy(
         ));
     }
     crate::engine::validate_legacy_variable_cast_targets(state).map_err(RlContractError)?;
-    Ok(
-        build_policy_observation_storage_common_fishing_v39_ajani_v42(
-            (
-                PolicyObservationBuildV5 {
-                    state,
-                    surface,
-                    acting_player,
-                    step_index,
-                    physical_decision_id,
-                    substep_index,
-                    substep_count,
-                    text_mode: ObservationTextModeV2::FlatForbiddenElided,
-                },
-                CUBE_ACCEPTED_PLANES_V1,
-            ),
-            false,
-            false,
-            false,
-            false,
-            false,
-            CUBE_ACCEPTED_STATICS_V1,
-        )?
-        .into_legacy(),
-    )
+    let mut observation = build_policy_observation_storage_common_fishing_v39_ajani_v42(
+        (
+            PolicyObservationBuildV5 {
+                state,
+                surface,
+                acting_player,
+                step_index,
+                physical_decision_id,
+                substep_index,
+                substep_count,
+                text_mode: ObservationTextModeV2::FlatForbiddenElided,
+            },
+            CUBE_ACCEPTED_PLANES_V1,
+        ),
+        false,
+        false,
+        false,
+        false,
+        false,
+        CUBE_ACCEPTED_STATICS_V1,
+    )?
+    .into_legacy();
+    cube_v1_decision_local_library(state, acting_player, &mut observation.extensions);
+    Ok(observation)
 }
 
 fn build_policy_observation_v6(request: PolicyObservationBuildV5<'_>) -> Result<ObservationV6> {
@@ -6664,14 +6664,132 @@ pub(crate) fn policy_observation_extensions_cube_v1(
     let (_, accept_fishing) = CUBE_ACCEPTED_STATICS_V1;
     let (accept_akroma, _, accept_faebloom, _, accept_hunter, _, accept_panda, _) =
         CUBE_ACCEPTED_PLANES_V1;
-    policy_observation_extensions_union_inner_v40(
+    let mut extensions = policy_observation_extensions_union_inner_v40(
         state,
         acting_player,
         ObservationTextModeV2::FlatForbiddenElided,
         false,
         accept_fishing,
         (accept_akroma, accept_faebloom, accept_hunter, accept_panda),
-    )
+    )?;
+    cube_v1_decision_local_library(state, acting_player, &mut extensions);
+    Ok(extensions)
+}
+
+/// CubeV1 only: the decision-local library of a search the frozen builder
+/// does not name. Cube tutors (Vampiric Tutor, Imperial Seal, Wishclaw
+/// Talisman, Green Sun's Zenith, Doomsday, Goblin Engineer, Stoneforge Mystic,
+/// Erode, Nissa) choose through the Eternal or other selection purposes, not
+/// the four `SearchLibrary*` purposes `policy_observation_extensions_
+/// conqueror_inner_v49_fake_v50` recognises, so their library candidates had
+/// no actor-visible row and every such decision refused as
+/// `HiddenActionReference`. A player who searches their library looks at all
+/// of its cards (CR 701.19a), and an effect that has its controller choose
+/// specific cards of their own library has shown them those cards: they are
+/// visible to the chooser, and only the chooser, during this prompt.
+///
+/// Applies only when no decision-local library was built, the pending choice
+/// is the acting player's own target selection, every candidate (selected or
+/// legal) is a live, bound, face-up card of the acting player's own library,
+/// and at least one of them has no library-knowledge entry for the actor (the
+/// condition under which the frozen route refuses). Any other shape, or a card
+/// the private projection refuses, leaves the extensions unchanged, so the
+/// decision refuses exactly as before. Card order is the frozen builder's
+/// positionless class order.
+fn cube_v1_decision_local_library(
+    state: &GameState,
+    acting_player: PlayerId,
+    extensions: &mut PolicyObservationExtensionsV6,
+) {
+    if extensions.decision_local_library.is_some() {
+        return;
+    }
+    let Some(crate::effect::PendingEffectChoice::SelectTargets {
+        player,
+        selected,
+        legal,
+        ..
+    }) = state
+        .engine
+        .pending_effect
+        .as_ref()
+        .and_then(|pending| pending.choice.as_ref())
+    else {
+        return;
+    };
+    if *player != acting_player {
+        return;
+    }
+    let library = &state.players[acting_player.index()].library;
+    let knowledge = &state.library_knowledge[acting_player.index()][acting_player.index()];
+    let mut ids = Vec::new();
+    let mut any_unknown = false;
+    for candidate in selected.iter().chain(legal.iter()) {
+        let Target::Object(id) = candidate.target else {
+            return;
+        };
+        let Some(object) = state.objects.try_get(id) else {
+            return;
+        };
+        if object.owner != acting_player
+            || object.zone != Zone::Library
+            || object.v4.face_down_v1.is_some()
+            || !library.contains(&id)
+            || candidate.expected_object.is_none_or(|binding| {
+                binding.object != id
+                    || binding.expected_zone != Zone::Library
+                    || binding.expected_zone_change_count != object.zone_change_count
+            })
+        {
+            return;
+        }
+        any_unknown |= !knowledge
+            .iter()
+            .any(|entry| entry.object == id && entry.zone_change_count == object.zone_change_count);
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if !any_unknown {
+        return;
+    }
+    let mut cards = Vec::with_capacity(ids.len());
+    for id in ids {
+        if crate::ravenous_amulet_v1::definition(state.objects.get(id).card_def) {
+            return;
+        }
+        match private_card(
+            state,
+            id,
+            ObservationTextModeV2::FlatForbiddenElided,
+            LimitedAppendixV1::Legacy,
+        ) {
+            Ok(card) => cards.push(card),
+            Err(_) => return,
+        }
+    }
+    // The frozen builder's order: observable identity, then the visible
+    // selected prefix, then the private arena-id tie-break scorers erase.
+    cards.sort_by_key(|card| {
+        (
+            card.stable.card_db_id,
+            card.stable.owner as u8,
+            card.stable.controller as u8,
+            selected
+                .iter()
+                .position(|target| {
+                    matches!(target.target,
+                        Target::Object(id) if id.0 == card.stable.arena_id)
+                })
+                .unwrap_or(usize::MAX),
+            card.stable.arena_id,
+        )
+    });
+    extensions.decision_local_library = Some(DecisionLocalLibraryV6 {
+        chooser: acting_player.into(),
+        library_owner: acting_player.into(),
+        cards,
+    });
 }
 
 /// Common extension storage used by the explicit Human V8 session path.

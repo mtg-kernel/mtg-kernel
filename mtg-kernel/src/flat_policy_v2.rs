@@ -5474,10 +5474,23 @@ impl FlatDecisionEncoderV2 {
         }
         self.build_globals(&observation)?;
         self.register_objects(&observation)?;
-        let extensions_v7 = crate::policy_observation_v7::policy_observation_extensions_v7(
-            session.game_state(),
-            crate::kernel_native_search_opponent_v1::player_id_v1(observation.acting_player),
-        )
+        let extensions_actor =
+            crate::kernel_native_search_opponent_v1::player_id_v1(observation.acting_player);
+        // CubeV1 scores the rows its own action slice resolved against
+        // (`flat_policy_v4.rs` proves they differ from the frozen ones only
+        // by a CubeV1 decision-local library); every other mode keeps the
+        // frozen producer.
+        let extensions_v7 = if session.is_cube_v1() {
+            crate::policy_observation_v7::policy_observation_extensions_v7_for_cube_v1(
+                session.game_state(),
+                extensions_actor,
+            )
+        } else {
+            crate::policy_observation_v7::policy_observation_extensions_v7(
+                session.game_state(),
+                extensions_actor,
+            )
+        }
         .map_err(|_| FlatDecisionErrorV2::ObservationContract)?;
         let extensions =
             self.register_extensions_v4(&observation, &extensions_v7, session.game_state())?;

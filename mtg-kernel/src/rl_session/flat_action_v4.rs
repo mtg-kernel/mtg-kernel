@@ -1971,6 +1971,102 @@ mod tests {
             }
         }
 
+        /// `actor` has cast Vampiric Tutor and both players passed: its
+        /// search ("Search your library for a card") is the pending choice,
+        /// over a library none of whose cards the actor has seen before.
+        fn vampiric_tutor_search_state(actor: PlayerId) -> (GameState, Vec<crate::ids::ObjectId>) {
+            use crate::engine::{advance_until_decision, step, Action, Decision};
+            let mut state = ready_state_for(actor);
+            state.active_player = actor;
+            state.priority_player = actor;
+            let library: Vec<_> = ["Lightning Bolt", "Sol Ring", "Island", "Lightning Bolt"]
+                .into_iter()
+                .map(|name| put(&mut state, actor, name, Zone::Library))
+                .collect();
+            let tutor = put(&mut state, actor, "Vampiric Tutor", Zone::Hand);
+            state.players[actor.index()].mana_pool[crate::mana::ManaColor::B.pool_index()] += 1;
+            step(&mut state, Action::CastSpell(tutor)).unwrap();
+            for _ in 0..16 {
+                match advance_until_decision(&mut state) {
+                    Decision::ChooseEffectTargets { player, .. } => {
+                        assert_eq!(player, actor);
+                        assert!(state.library_knowledge[actor.index()][actor.index()].is_empty());
+                        return (state, library);
+                    }
+                    Decision::CastSpellOrPass { .. } => step(&mut state, Action::Pass).unwrap(),
+                    other => panic!("Vampiric Tutor fixture reached {other:?}"),
+                }
+            }
+            panic!("Vampiric Tutor never reached its search");
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_tutor_search_encodes_its_library_for_the_chooser_only_and_v3_still_refuses() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let (state, library) = vampiric_tutor_search_state(actor);
+                // The frozen route has no row for these library cards.
+                let frozen_extensions =
+                    crate::rl::policy_observation_extensions_v6(&state, actor).unwrap();
+                assert_eq!(frozen_extensions.decision_local_library, None);
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state.clone());
+                assert!(matches!(
+                    try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::HiddenActionReference)
+                ));
+
+                let cube = FastActorSessionV1::from_cube_v1_fixture_state(state.clone());
+                let decision = expected(&cube);
+                assert_eq!(decision.acting_player, actor.into());
+                let search = crate::rl::policy_observation_extensions_cube_v1(&state, actor)
+                    .unwrap()
+                    .decision_local_library
+                    .expect("the chooser sees the cards they search");
+                assert_eq!(search.chooser, actor.into());
+                assert_eq!(search.library_owner, actor.into());
+                let mut searched: Vec<u32> =
+                    search.cards.iter().map(|card| card.stable.arena_id).collect();
+                searched.sort_unstable();
+                let mut cards: Vec<u32> = library.iter().map(|id| id.0).collect();
+                cards.sort_unstable();
+                assert_eq!(searched, cards);
+                // The opponent's view of the same state gains nothing.
+                assert_eq!(
+                    crate::rl::policy_observation_extensions_cube_v1(&state, actor.opponent())
+                        .unwrap()
+                        .decision_local_library,
+                    None
+                );
+
+                let (slice, objects) = try_encoded_v4(&cube).unwrap();
+                assert_eq!(slice.active_action_count, decision.legal_action_count);
+                assert_eq!(
+                    objects
+                        .iter()
+                        .filter(|row| row.group == FlatActionObjectGroupV1::DecisionLocalLibrary)
+                        .count(),
+                    library.len()
+                );
+                cube.flat_policy_observation_v4(decision).unwrap();
+                assert_full_v4_scoring(&cube);
+
+                // The chosen card goes through the binding: it leaves the
+                // search and the spell finishes resolving.
+                let mut cube = cube;
+                let chosen = match &cube.current.as_ref().unwrap().candidates[0].semantic {
+                    ActionSemanticV1::ChooseEffectTarget {
+                        target: crate::rl::TargetRefV1::Object { object },
+                        ..
+                    } => object.arena_id,
+                    other => panic!("first candidate is {other:?}"),
+                };
+                cube.step(decision.episode_id, decision.step, 0).unwrap();
+                assert!(cube.state.engine.pending_effect.is_none());
+                let top = *cube.state.players[actor.index()].library.first().unwrap();
+                assert_eq!(top.0, chosen);
+            }
+        }
+
         /// Dragon's Rage Channeler with delirium has active typed combat rules.
         fn combat_static_state(actor: PlayerId) -> GameState {
             let mut state = ready_state_for(actor);

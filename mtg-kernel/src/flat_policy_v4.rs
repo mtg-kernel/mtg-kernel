@@ -132,7 +132,14 @@ impl FastActorSessionV1 {
             .map_err(|_| FlatDecisionErrorV2::ObservationContract)?;
             // The common builder is golden-bound. Prove its frozen rows are
             // exactly the separately produced Cube rows before consuming them.
-            if observation.extensions != cube_v6 || cube_v7 != frozen_v7 {
+            // The one allowed difference is a decision-local library that only
+            // CubeV1 builds (`rl::cube_v1_decision_local_library`), which the
+            // common builder then consumes from the Cube producer.
+            let mut cube_v7_frozen_rows = cube_v7.clone();
+            if frozen_v7.decision_local_library.is_none() {
+                cube_v7_frozen_rows.decision_local_library = None;
+            }
+            if observation.extensions != cube_v6 || cube_v7_frozen_rows != frozen_v7 {
                 return Err(FlatDecisionErrorV2::ObservationContract);
             }
         }
