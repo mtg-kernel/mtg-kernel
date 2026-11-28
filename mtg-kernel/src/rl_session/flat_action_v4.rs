@@ -2191,6 +2191,7 @@ mod tests {
                         assert_eq!(row.controller_relative, 1);
                         assert_eq!(row.zone, flat_zone_v1(Zone::Battlefield));
                     }
+                    Target::StackItem(_) => panic!("a stack item is never an attack target"),
                 }
             }
             assert!(current.candidates.iter().all(|candidate| matches!(
@@ -2246,22 +2247,42 @@ mod tests {
                 );
                 assert_eq!(cube.game_state(), &before);
 
-                // The second attacker attacks the player.
+                // The second attacker attacks the player. Combat then runs
+                // with the recorded targets: the first 7/7 kills the
+                // three-loyalty Jace and only the second damages the player.
+                let defender = actor.opponent();
+                let life = cube.game_state().players[defender.index()].life;
                 cube.consume_current_flat_action_slice_v3(second_slice.binding, player_index)
                     .unwrap();
+                assert_eq!(attack_target_menu(&cube), None);
+                for _ in 0..64 {
+                    if cube.game_state().objects.get(walker).zone != Zone::Battlefield {
+                        break;
+                    }
+                    let decision = expected(&cube);
+                    let (slice, _) = try_encoded_v4(&cube).unwrap();
+                    assert_eq!(slice.active_action_count, decision.legal_action_count);
+                    let selected = cube
+                        .current
+                        .as_ref()
+                        .unwrap()
+                        .candidates
+                        .iter()
+                        .position(|candidate| match &candidate.semantic {
+                            ActionSemanticV1::ChooseBlockerInclusion { include, .. } => !include,
+                            ActionSemanticV1::Pass { .. } => true,
+                            _ => false,
+                        })
+                        .expect("a pass or blocker exclusion");
+                    cube.step(decision.episode_id, decision.step, selected as u32)
+                        .unwrap();
+                }
                 let state = cube.game_state();
-                assert!(state.engine.combat.attackers_declared);
-                let attacked = crate::attack_target_v1::attacked_planeswalker(state, first)
-                    .expect("the first attacker attacks Jace");
-                assert_eq!(attacked.object, walker);
-                assert_eq!(
-                    attacked.zone_change_count,
-                    state.objects.get(walker).zone_change_count
-                );
-                assert_eq!(
-                    crate::attack_target_v1::attacked_planeswalker(state, second),
-                    None
-                );
+                assert_eq!(state.objects.get(walker).zone, Zone::Graveyard);
+                assert_eq!(state.players[defender.index()].life, life - 7);
+                for attacker in attackers {
+                    assert_eq!(state.objects.get(attacker).zone, Zone::Battlefield);
+                }
             }
         }
 
