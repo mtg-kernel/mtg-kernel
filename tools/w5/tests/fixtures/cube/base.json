@@ -1,0 +1,25 @@
+{
+  "schema": "mtg-kernel-native-expanded-training-run/v1",
+  "initial_source": {
+    "play_import": {
+      "path": "gate1-fill/flatv9-play-import.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "checkpoint": null
+  },
+  "opponents": [],
+  "learning_rate": 0.0001,
+  "value_coefficient": 0.5,
+  "record_envelope": "zstd1",
+  "loss_selection": {
+    "kind": "gae_advantage_value_v1",
+    "gamma": 1.0,
+    "lambda": 0.9,
+    "entropy_coefficient": 0.0
+  },
+  "max_non_natural_episode_fraction": 0.0625,
+  "training_math": "portable-math-v1",
+  "trajectory_format": "binary_v1",
+  "output_directory": "segment-0",
+  "max_trajectory_batch_mebibytes": 4096
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "w5-cube-segment-pins/v1",
+  "note": "Test fixture for Cube M2 T12. Signed M3 Stage 1 identities (dealer, cube list, gaps, fence_v3, A1.3 constants, M3.5 recipe) are real; every entry under gate1 with fixture true is a placeholder that Gate 1 replaces (M3.10). The pool is the census-r2 fence_v3 pool (collab census-r2-evidence/pool-v3.json), not the Gate 1 build's.",
+  "dealer": {"path": "tools/cube_v1/deal.py", "sha256": "0e60d49f40eb9509210f4e2f71e8d2cd7dac65e393696427043978556e5af497"},
+  "pool": {
+    "sha256": "f5376dbbeefeadcbffbc777fe1da06f92ac672532ccb88b3685d664d19026f6a",
+    "kernel_carddb_hash": "362918055ae24c1d",
+    "input_sha256": {
+      "cube_list": "e647de154da68a25caf5c97f022a9466311b2bf9d604143f35ceef9ac6aaf02d",
+      "gaps": "efad86376670270180b2ada893958b0065a57e8a0905565af1aae4e72a188cdd",
+      "id_export": "323a3b88e0c13040a32993d8de627d474d07a3db0fb8146536d9f89e93b66b12",
+      "fence": "8d02e845f1be12d636d4e6b3f1347b4d42f002e6c7ce67ce339114bcf6775e5c"
+    }
+  },
+  "constants": {"sha256": "9c9d10326dececc9a332999c9ee8210a4d6e6dc40ceaa1211590968016e168ef"},
+  "base": {"sha256": "ae7bf5dd672bf99585073cd449855722172de6bcf5b9c5cbb79e0cc631074f38"},
+  "segment": {"namespace": "m2-t12-fixture", "run": "seg0", "update_start": 0, "update_end": 2},
+  "episode": {"deck_format": "limited40-v1", "cube_flat_action_contract": true},
+  "gate1": {
+    "kernel_carddb_hash": {"fixture": true, "owner": "Gate 1 build", "section": "M3.4, M3.10", "value": "362918055ae24c1d"},
+    "id_export_sha256": {"fixture": true, "owner": "Gate 1 build (cube_card_ids/v1 export)", "section": "M3.4, M3.10", "value": "323a3b88e0c13040a32993d8de627d474d07a3db0fb8146536d9f89e93b66b12"},
+    "pool_sha256": {"fixture": true, "owner": "Gate 1 (active pool JSON)", "section": "M3.10", "value": "f5376dbbeefeadcbffbc777fe1da06f92ac672532ccb88b3685d664d19026f6a"},
+    "pairs_per_update": {"fixture": true, "owner": "T9 (N / 2)", "section": "M3.3", "value": 8},
+    "constants_sha256": {"fixture": true, "owner": "T9 (m3_train_constants.json)", "section": "M3.3, M3.10", "value": "9c9d10326dececc9a332999c9ee8210a4d6e6dc40ceaa1211590968016e168ef"},
+    "flatv9_play_import_sha256": {"fixture": true, "owner": "T6 (FlatV9 initial source)", "section": "M3.4, M3.10", "value": "0000000000000000000000000000000000000000000000000000000000000000"},
+    "card_semantics": {"fixture": true, "owner": "T8 (Arm E on, card_semantics_e1 table)", "section": "M3.2, M3.10", "value": null}
+  }
+}
