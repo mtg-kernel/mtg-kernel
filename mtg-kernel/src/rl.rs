@@ -6690,12 +6690,15 @@ pub(crate) fn policy_observation_extensions_cube_v1(
 ///
 /// Applies only when no decision-local library was built, the pending choice
 /// is the acting player's own target selection, every candidate (selected or
-/// legal) is a live, bound, face-up card of the acting player's own library,
-/// and at least one of them has no library-knowledge entry for the actor (the
-/// condition under which the frozen route refuses). Any other shape, or a card
-/// the private projection refuses, leaves the extensions unchanged, so the
-/// decision refuses exactly as before. Card order is the frozen builder's
-/// positionless class order.
+/// legal) is a live, bound, face-up card of the acting player's own library or
+/// graveyard (Doomsday's pile draws on both), and at least one library card
+/// has no library-knowledge entry for the actor (the condition under which the
+/// frozen route refuses). Only the library cards join the decision-local
+/// library; graveyard cards are public and keep their ordinary rows (CubeV1
+/// normalisation places them after the library cards, in graveyard order). Any
+/// other shape, or a card the private projection refuses, leaves the
+/// extensions unchanged, so the decision refuses exactly as before. Card order
+/// is the frozen builder's positionless class order.
 fn cube_v1_decision_local_library(
     state: &GameState,
     acting_player: PlayerId,
@@ -6721,6 +6724,7 @@ fn cube_v1_decision_local_library(
         return;
     }
     let library = &state.players[acting_player.index()].library;
+    let graveyard = &state.players[acting_player.index()].graveyard;
     let knowledge = &state.library_knowledge[acting_player.index()][acting_player.index()];
     let mut ids = Vec::new();
     let mut any_unknown = false;
@@ -6731,17 +6735,24 @@ fn cube_v1_decision_local_library(
         let Some(object) = state.objects.try_get(id) else {
             return;
         };
+        let zone_holds = match object.zone {
+            Zone::Library => library.contains(&id),
+            Zone::Graveyard => graveyard.contains(&id),
+            _ => false,
+        };
         if object.owner != acting_player
-            || object.zone != Zone::Library
+            || !zone_holds
             || object.v4.face_down_v1.is_some()
-            || !library.contains(&id)
             || candidate.expected_object.is_none_or(|binding| {
                 binding.object != id
-                    || binding.expected_zone != Zone::Library
+                    || binding.expected_zone != object.zone
                     || binding.expected_zone_change_count != object.zone_change_count
             })
         {
             return;
+        }
+        if object.zone == Zone::Graveyard {
+            continue;
         }
         any_unknown |= !knowledge
             .iter()

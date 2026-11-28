@@ -2067,6 +2067,85 @@ mod tests {
             }
         }
 
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_doomsday_pile_keeps_public_graveyard_rows_after_its_library_and_v3_still_refuses() {
+            use crate::engine::{advance_until_decision, step, Action, Decision};
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let mut state = ready_state_for(actor);
+                state.active_player = actor;
+                state.priority_player = actor;
+                for name in ["Island", "Sol Ring", "Brainstorm", "Island"] {
+                    put(&mut state, actor, name, Zone::Library);
+                }
+                let graveyard: Vec<_> = ["Lightning Bolt", "Dark Ritual"]
+                    .into_iter()
+                    .map(|name| put(&mut state, actor, name, Zone::Graveyard))
+                    .collect();
+                let doomsday = put(&mut state, actor, "Doomsday", Zone::Hand);
+                state.players[actor.index()].mana_pool[crate::mana::ManaColor::B.pool_index()] +=
+                    3;
+                step(&mut state, Action::CastSpell(doomsday)).unwrap();
+                loop {
+                    match advance_until_decision(&mut state) {
+                        Decision::ChooseEffectTargets { player, .. } => {
+                            assert_eq!(player, actor);
+                            break;
+                        }
+                        Decision::CastSpellOrPass { .. } => {
+                            step(&mut state, Action::Pass).unwrap()
+                        }
+                        other => panic!("Doomsday fixture reached {other:?}"),
+                    }
+                }
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state.clone());
+                assert!(matches!(
+                    try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::HiddenActionReference)
+                ));
+
+                let cube = FastActorSessionV1::from_cube_v1_fixture_state(state.clone());
+                let search = crate::rl::policy_observation_extensions_cube_v1(&state, actor)
+                    .unwrap()
+                    .decision_local_library
+                    .unwrap();
+                assert_eq!(search.cards.len(), 4);
+                assert!(search.cards.iter().all(|card| card.stable.zone == Zone::Library));
+                let zones: Vec<Zone> = cube
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .candidates
+                    .iter()
+                    .map(|candidate| match &candidate.semantic {
+                        ActionSemanticV1::ChooseEffectTarget {
+                            target: crate::rl::TargetRefV1::Object { object },
+                            ..
+                        } => object.zone,
+                        other => panic!("Doomsday candidate {other:?}"),
+                    })
+                    .collect();
+                assert_eq!(
+                    zones,
+                    [[Zone::Library; 4].as_slice(), &[Zone::Graveyard; 2]].concat()
+                );
+                let graveyard_order: Vec<u32> = cube.current.as_ref().unwrap().candidates[4..]
+                    .iter()
+                    .map(|candidate| match &candidate.semantic {
+                        ActionSemanticV1::ChooseEffectTarget {
+                            target: crate::rl::TargetRefV1::Object { object },
+                            ..
+                        } => object.arena_id,
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                assert_eq!(graveyard_order, [graveyard[0].0, graveyard[1].0]);
+                let (slice, _) = try_encoded_v4(&cube).unwrap();
+                assert_eq!(slice.active_action_count, expected(&cube).legal_action_count);
+                assert_full_v4_scoring(&cube);
+            }
+        }
+
         /// Dragon's Rage Channeler with delirium has active typed combat rules.
         fn combat_static_state(actor: PlayerId) -> GameState {
             let mut state = ready_state_for(actor);
