@@ -197,6 +197,9 @@ pub(crate) fn admit_writer_v1<T>(saved: &ExpandedCheckpointV1<T>) -> Result<(), 
     use crate::native_flat_tensorizer_v8::{
         FEATURE_CONTRACT_DIGEST_V8, FEATURE_ENCODING_DIGEST_V8,
     };
+    use crate::native_flat_tensorizer_v9::{
+        FEATURE_CONTRACT_DIGEST_V9, FEATURE_ENCODING_DIGEST_V9,
+    };
     let digests = (
         saved.feature_contract_digest.as_str(),
         saved.feature_encoding_digest.as_str(),
@@ -205,6 +208,7 @@ pub(crate) fn admit_writer_v1<T>(saved: &ExpandedCheckpointV1<T>) -> Result<(), 
         (FEATURE_CONTRACT_DIGEST_V4, FEATURE_ENCODING_DIGEST_V4),
         (FEATURE_CONTRACT_DIGEST_V7, FEATURE_ENCODING_DIGEST_V7),
         (FEATURE_CONTRACT_DIGEST_V8, FEATURE_ENCODING_DIGEST_V8),
+        (FEATURE_CONTRACT_DIGEST_V9, FEATURE_ENCODING_DIGEST_V9),
     ]
     .contains(&digests);
     let loss = saved.loss_identity == "terminal_reinforce_value/v3"

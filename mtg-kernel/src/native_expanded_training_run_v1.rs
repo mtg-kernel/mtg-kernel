@@ -1995,6 +1995,10 @@ fn flat_identity_declared_v1(
             crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8,
             crate::native_flat_tensorizer_v8::FEATURE_ENCODING_DIGEST_V8,
         ),
+        (
+            crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
+            crate::native_flat_tensorizer_v9::FEATURE_ENCODING_DIGEST_V9,
+        ),
     ]
     .into_iter()
     .find(|(contract, encoding)| {
@@ -2811,6 +2815,7 @@ mod tests {
                         max_physical_decisions: 4000,
                         max_policy_steps: 40000,
                         cube_flat_action_contract: false,
+                        flat_v9: false,
                         max_stack_objects: None,
                         opponent: None,
                         opponent_kind: None,
@@ -4544,6 +4549,7 @@ mod tests {
                         max_physical_decisions: 100_000,
                         max_policy_steps: 1_000_000,
                         cube_flat_action_contract: false,
+                        flat_v9: false,
                         max_stack_objects: None,
                         runtime_rules: None,
                         reset: None,

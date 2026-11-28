@@ -766,7 +766,9 @@ pub(crate) fn collector_forward_v1(
     path: ForwardPathV1,
     view: NativeEncodedDecisionViewV1<'_>,
 ) -> Option<Result<ExactOutputV1, String>> {
-    if matches!(path, ForwardPathV1::TransferV8) || !view.pairing_node_indices.is_empty() {
+    if matches!(path, ForwardPathV1::TransferV8 | ForwardPathV1::TransferV9)
+        || !view.pairing_node_indices.is_empty()
+    {
         return None;
     }
     // The kernel's tanh is proved equal to the platform tanhf in the default

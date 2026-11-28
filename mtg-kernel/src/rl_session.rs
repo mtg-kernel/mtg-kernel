@@ -7990,6 +7990,17 @@ impl FastActorSessionV1 {
         self.max_stack_objects
     }
 
+    /// FlatV9 (M2 task T6): starts the game's FlatV9 history record
+    /// (`flat_v9_history_v1`). Only before the first policy step, and only
+    /// once: the record counts turns and stamps entries from here.
+    pub(crate) fn enable_flat_v9_history_v1(&mut self) -> Result<(), String> {
+        if self.policy_step_count != 0 || self.state.flat_v9_history_v1.is_some() {
+            return Err("the FlatV9 history starts once, before the first policy step".into());
+        }
+        crate::flat_v9_history_v1::enable_v1(&mut self.state);
+        Ok(())
+    }
+
     /// Configures the optional stack-size cap (`max_stack_objects`).
     /// `None` removes the cap. When `Some(cap)` is given on a live
     /// nonterminal session whose stack already exceeds `cap`, the pending

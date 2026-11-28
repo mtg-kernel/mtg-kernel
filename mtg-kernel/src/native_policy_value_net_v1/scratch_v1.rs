@@ -108,6 +108,17 @@ impl NativePolicyValueNetV1 {
         self.forward_validated_with_scratch_v1(encoded, counts, scratch, activation_mode, None)
     }
 
+    /// The scratch forward over FlatV9 inputs (`v9_cube_v1`).
+    pub(crate) fn forward_feature_transfer_v9_with_scratch_v1<'a>(
+        &self,
+        encoded: NativeEncodedDecisionViewV1<'_>,
+        scratch: &'a mut NativePolicyValueForwardScratchV1,
+        activation_mode: ForwardActivationModeV1,
+    ) -> Result<NativePolicyValueOutputViewV1<'a>, NativePolicyValueErrorV1> {
+        let counts = encoded.validate(self.feature_transfer_config_v9())?;
+        self.forward_validated_with_scratch_v1(encoded, counts, scratch, activation_mode, None)
+    }
+
     /// `forward_with_scratch_v1` (flat, V3 or V4 transfer by `config`) using
     /// `rows` for the five row layers: the same output, bit for bit.
     pub(crate) fn forward_rows_cached_with_scratch_v1<'a>(
@@ -181,13 +192,14 @@ impl NativePolicyValueNetV1 {
         }
         clear_for(
             &mut scratch.input,
-            counts.object_count * OBJECT_ENCODER_INPUT_V1,
+            counts.object_count * self.object_encoder.first.input_dim,
         );
+        let object_width = self.config.object_feature_dim;
         for object in 0..counts.object_count {
-            let begin = object * OBJECT_FEATURE_DIM_V1;
+            let begin = object * object_width;
             scratch
                 .input
-                .extend_from_slice(&encoded.object_features[begin..begin + OBJECT_FEATURE_DIM_V1]);
+                .extend_from_slice(&encoded.object_features[begin..begin + object_width]);
             let token = encoded.object_card_ids[object] as usize;
             let begin = token * CARD_EMBEDDING_DIM_V1;
             scratch
@@ -289,7 +301,7 @@ impl NativePolicyValueNetV1 {
             &scratch.object_hidden,
             encoded.object_groups,
         );
-        clear_for(&mut scratch.input, STATE_ENCODER_INPUT_V1);
+        clear_for(&mut scratch.input, self.state_encoder.first.input_dim);
         scratch.input.extend_from_slice(encoded.state);
         scratch.input.extend_from_slice(&scratch.pooled_objects);
         two_layer_into(

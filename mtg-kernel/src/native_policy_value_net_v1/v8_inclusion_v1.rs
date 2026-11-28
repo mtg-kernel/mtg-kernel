@@ -193,6 +193,13 @@ pub(super) fn linear_rows_guarded_v1(
     output
 }
 
+/// Whether `config` is of a net with the V8 inputs (include column and
+/// pairing path): the V8 inclusion net or the FlatV9 net built on it.
+pub(super) fn has_v8_inputs_v1(config: NativePolicyValueModelConfigV1) -> bool {
+    config.model_architecture_version == V8_MODEL_ARCHITECTURE_VERSION_V1
+        || config.model_architecture_version == super::v9_cube_v1::V9_MODEL_ARCHITECTURE_VERSION_V1
+}
+
 /// A view's pairing relation: empty, or (only under the V8 config) whole
 /// `(blocker, attacker)` pairs of two distinct object nodes.
 pub(super) fn validate_pairing_v1(
@@ -203,7 +210,7 @@ pub(super) fn validate_pairing_v1(
     if pairs.is_empty() {
         return Ok(());
     }
-    if config.model_architecture_version != V8_MODEL_ARCHITECTURE_VERSION_V1 {
+    if !has_v8_inputs_v1(config) {
         return Err(NativePolicyValueErrorV1::SchemaMismatch(
             "pairing_node_indices",
         ));
@@ -232,7 +239,7 @@ pub(super) fn validate_variant_v1(
     action_first: &LinearV1,
     pairing: Option<&PairingEncoderV1>,
 ) -> Result<(), NativePolicyValueErrorV1> {
-    let v8 = config.model_architecture_version == V8_MODEL_ARCHITECTURE_VERSION_V1;
+    let v8 = has_v8_inputs_v1(config);
     let expected_action_input = if v8 {
         V8_ACTION_ENCODER_INPUT_V1
     } else {
@@ -248,7 +255,14 @@ pub(super) fn validate_variant_v1(
     match (v8, pairing) {
         (false, None) => Ok(()),
         (true, Some(pairing)) => {
-            if config != NativePolicyValueModelConfigV1::contract_v8_inclusion_v1()
+            let expected = if config.model_architecture_version
+                == super::v9_cube_v1::V9_MODEL_ARCHITECTURE_VERSION_V1
+            {
+                NativePolicyValueModelConfigV1::contract_v9_cube_v1()
+            } else {
+                NativePolicyValueModelConfigV1::contract_v8_inclusion_v1()
+            };
+            if config != expected
                 || pairing.first.input_dim != V8_PAIRING_INPUT_DIM_V1
                 || pairing.first.output_dim != HIDDEN_DIM_V1
                 || pairing.second.input_dim != HIDDEN_DIM_V1

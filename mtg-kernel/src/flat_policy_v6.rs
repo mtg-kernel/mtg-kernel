@@ -23,11 +23,6 @@
 //! public cards, public counters, public mana pools, public permissions and
 //! the public turn schedule. No hidden zone is read.
 
-// The FlatV9 policy and its digest selection (T6, next change) are the
-// callers of the decision's extension, the digest switches and the labeled
-// view; until then they are unused.
-#![allow(dead_code)]
-
 use crate::card_def::{CardType, Keywords, ManaSpendRestrictionDef};
 use crate::flat_policy_v2::{FlatDecisionErrorV2, FlatObjectGroupV2, FlatObjectSourceKindV2};
 use crate::policy_observation_v6::ObservationV6;
@@ -519,11 +514,10 @@ pub(crate) fn columns_v1(
 }
 
 /// A FlatV9 decision: the FlatV8 (V4-generation) decision of the relaxed
-/// observation, the FlatV9 extension and columns.
+/// observation and the FlatV9 columns.
 #[derive(Debug, Clone)]
 pub(crate) struct FlatDecisionV9 {
     pub(crate) v4: crate::flat_policy_v4::FlatDecisionV4,
-    pub(crate) extension: FlatV9ExtensionV1,
     pub(crate) columns: FlatV9ColumnsV1,
 }
 
@@ -552,15 +546,12 @@ impl crate::rl_session::FastActorSessionV1 {
             let _relaxed = relaxed_scope_v1();
             self.encode_current_flat_scoring_decision_owned_v4(expected, encoder, buffers)?
         };
-        Ok(FlatDecisionV9 {
-            v4,
-            extension,
-            columns,
-        })
+        Ok(FlatDecisionV9 { v4, columns })
     }
 
     /// The unsanitized observation with its FlatV9 extension under
     /// `extensions.flat_v9`, as the Python reference reads it.
+    #[cfg(test)]
     pub(crate) fn flat_v9_observation_json_v1(
         &self,
         expected: crate::rl_session::FastActorDecisionV1,

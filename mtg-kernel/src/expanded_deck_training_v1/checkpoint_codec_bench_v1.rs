@@ -857,6 +857,7 @@ fn collect_v1(
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,

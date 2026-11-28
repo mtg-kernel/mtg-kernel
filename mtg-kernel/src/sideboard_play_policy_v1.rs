@@ -206,6 +206,7 @@ enum ReplayForwardPathV1 {
     V3,
     V4,
     V8,
+    V9,
 }
 
 impl ReplayForwardRowsV1 {
@@ -378,6 +379,14 @@ struct FrozenPlayFreshSuccessorStateV1 {
     flat_v8: bool,
     tensorizer_v8: crate::native_flat_tensorizer_v8::NativeFlatTensorizerV8,
     pairing: Vec<i64>,
+    /// FlatV9 (`native_flat_tensorizer_v9.rs`): set only by the FlatV9
+    /// conversion (`into_flat_v9_v1`, which clears `flat_v8`); forks and
+    /// sampling resets keep it. The V9 tensors share `tensor`'s storage and
+    /// the pairing relation; `columns_v9` holds the encoded decision's FlatV9
+    /// columns.
+    flat_v9: bool,
+    tensorizer_v9: crate::native_flat_tensorizer_v9::NativeFlatTensorizerV9,
+    columns_v9: crate::flat_policy_v6::FlatV9ColumnsV1,
 }
 
 impl FrozenPlayFreshSuccessorStateV1 {
@@ -386,6 +395,7 @@ impl FrozenPlayFreshSuccessorStateV1 {
         Self {
             flat_v7: self.flat_v7,
             flat_v8: self.flat_v8,
+            flat_v9: self.flat_v9,
             ..Self::default()
         }
     }
@@ -521,6 +531,20 @@ pub(crate) const FRESH_FEATURE_IDENTITY_V8: FreshFeatureIdentityV1 = FreshFeatur
     feature_encoding_digest: crate::native_flat_tensorizer_v8::FEATURE_ENCODING_DIGEST_V8,
     features_source_sha256: crate::native_flat_tensorizer_v8::FEATURES_SOURCE_SHA256_V8,
     feature_descriptor_sha256: crate::native_flat_tensorizer_v8::FEATURE_DESCRIPTOR_SHA256_V8,
+};
+
+/// FlatV9 (the Cube feature contract, M2 task T6): FlatV8 of the relaxed
+/// observation plus the FlatV9 object and state columns, scored by the
+/// FlatV9 net (`native_policy_value_net_v1::v9_cube_v1`). Of the V4
+/// generation family; its digests, not the generation, distinguish it.
+pub(crate) const FRESH_FEATURE_IDENTITY_V9: FreshFeatureIdentityV1 = FreshFeatureIdentityV1 {
+    generation: FreshLineageGenerationV1::V4,
+    feature_schema_version: crate::native_flat_tensorizer_v9::FEATURE_SCHEMA_VERSION_V9,
+    feature_registry_version: crate::native_flat_tensorizer_v9::FEATURE_REGISTRY_VERSION_V9,
+    feature_contract_digest: crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
+    feature_encoding_digest: crate::native_flat_tensorizer_v9::FEATURE_ENCODING_DIGEST_V9,
+    features_source_sha256: crate::native_flat_tensorizer_v9::FEATURES_SOURCE_SHA256_V9,
+    feature_descriptor_sha256: crate::native_flat_tensorizer_v9::FEATURE_DESCRIPTOR_SHA256_V9,
 };
 
 /// Computes the two byte-identity hashes `from_fresh_initialization_generation_v1`
@@ -740,7 +764,9 @@ impl FrozenPlayPolicyV1 {
     /// mislabel is that every stamping site instead reads this.
     pub(crate) fn feature_identity_v1(&self) -> FreshFeatureIdentityV1 {
         if let Some(fresh) = &self.fresh_successor {
-            if fresh.flat_v8 {
+            if fresh.flat_v9 {
+                FRESH_FEATURE_IDENTITY_V9
+            } else if fresh.flat_v8 {
                 FRESH_FEATURE_IDENTITY_V8
             } else if fresh.flat_v7 {
                 FRESH_FEATURE_IDENTITY_V7
@@ -1386,7 +1412,7 @@ impl FrozenPlayPolicyV1 {
             .as_mut()
             .ok_or("the V4-to-V7 transfer requires a V4 fresh-lineage policy")?;
         require(
-            !fresh.flat_v7 && !fresh.flat_v8,
+            !fresh.flat_v7 && !fresh.flat_v8 && !fresh.flat_v9,
             "the policy already has the V7 identity",
         )?;
         *fresh = FrozenPlayFreshSuccessorStateV1 {
@@ -1423,7 +1449,10 @@ impl FrozenPlayPolicyV1 {
             .fresh_successor
             .as_mut()
             .ok_or("the V8 conversion requires a V4 fresh-lineage policy")?;
-        require(!fresh.flat_v8, "the policy already has the V8 identity")?;
+        require(
+            !fresh.flat_v8 && !fresh.flat_v9,
+            "the policy already has the V8 identity",
+        )?;
         *fresh = FrozenPlayFreshSuccessorStateV1 {
             flat_v8: true,
             ..FrozenPlayFreshSuccessorStateV1::default()
@@ -1447,11 +1476,58 @@ impl FrozenPlayPolicyV1 {
         Ok(self)
     }
 
-    /// The pairing relation of the decision the V8 scorer last scored.
+    /// The FlatV9 conversion of a FlatV8 policy (M2 task T6): its net becomes
+    /// the FlatV9 net with `object_columns` (`[64, 33]`) and `state_columns`
+    /// (`[64, 51]`) as the new first-layer columns, and it scores FlatV9 rows
+    /// of FlatV9 games (`flat_v9_history_v1` enabled). Refused for every
+    /// other policy.
+    pub(crate) fn into_flat_v9_v1(
+        mut self,
+        object_columns: &[f32],
+        state_columns: &[f32],
+    ) -> Result<Self, String> {
+        require(
+            self.s_model.is_none() && self.w_model.is_none(),
+            "the FlatV9 conversion is net-8's",
+        )?;
+        require(
+            self.successor.is_none()
+                && self.input_contract.is_none()
+                && self.no_digest_check.is_none(),
+            "the FlatV9 conversion requires a FlatV8 policy with its original inputs",
+        )?;
+        let fresh = self
+            .fresh_successor
+            .as_mut()
+            .ok_or("the FlatV9 conversion requires a FlatV8 fresh-lineage policy")?;
+        require(
+            fresh.flat_v8 && !fresh.flat_v9,
+            "the FlatV9 conversion requires a FlatV8 policy",
+        )?;
+        *fresh = FrozenPlayFreshSuccessorStateV1 {
+            flat_v9: true,
+            ..FrozenPlayFreshSuccessorStateV1::default()
+        };
+        self.model = std::sync::Arc::new(
+            (*self.model)
+                .clone()
+                .into_v9_cube_v1(object_columns, state_columns)
+                .map_err(|e| e.to_string())?,
+        );
+        self.inference_cache = None;
+        self.inference_probe = None;
+        self.row_cache = Default::default();
+        #[cfg(feature = "gpu-exact-v1")]
+        self.gpu_exact.clear();
+        Ok(self)
+    }
+
+    /// The pairing relation of the decision the V8 or FlatV9 scorer last
+    /// scored.
     pub(crate) fn last_scored_pairing_v8(&self) -> Result<&[i64], String> {
         self.fresh_successor
             .as_ref()
-            .filter(|fresh| fresh.flat_v8)
+            .filter(|fresh| fresh.flat_v8 || fresh.flat_v9)
             .map(|fresh| fresh.pairing.as_slice())
             .ok_or_else(|| "the pairing relation requires the V8 scorer".into())
     }
@@ -2159,6 +2235,23 @@ impl FrozenPlayPolicyV1 {
         pairing: &[i64],
         rows: Option<&mut ReplayForwardRowsV1>,
     ) -> Result<FrozenPlayDecisionScoresV1, String> {
+        // FlatV9 (`into_flat_v9_v1`): its own tensors and the pairing
+        // relation, scored by the FlatV9 net.
+        if self
+            .fresh_successor
+            .as_ref()
+            .is_some_and(|fresh| fresh.flat_v9)
+        {
+            require(
+                generation == FreshLineageGenerationV1::V4 && self.input_contract.is_none(),
+                "FlatV9 replays are of the V4 generation without input contract",
+            )?;
+            return self.forward_replay_view_v1(
+                ReplayForwardPathV1::V9,
+                crate::native_flat_tensorizer_v9::encoded_decision_view_v9(common, pairing),
+                rows,
+            );
+        }
         // FlatV8 (`into_flat_v8_v1`): its own tensors and pairing relation,
         // scored by the V8 inclusion net; every other policy has no relation.
         if self
@@ -2250,6 +2343,7 @@ impl FrozenPlayPolicyV1 {
                 ReplayForwardPathV1::V3 => self.model.feature_transfer_config_v3(),
                 ReplayForwardPathV1::V4 => self.model.feature_transfer_config_v4(),
                 ReplayForwardPathV1::V8 => self.model.feature_transfer_config_v8(),
+                ReplayForwardPathV1::V9 => self.model.feature_transfer_config_v9(),
             };
             let (scratch, rows) = rows.bind_v1(&self.model);
             let output = self
@@ -2265,6 +2359,7 @@ impl FrozenPlayPolicyV1 {
             ReplayForwardPathV1::V3 => self.model.forward_feature_transfer_v3_mode(view, mode),
             ReplayForwardPathV1::V4 => self.model.forward_feature_transfer_v4_mode(view, mode),
             ReplayForwardPathV1::V8 => self.model.forward_feature_transfer_v8_mode(view, mode),
+            ReplayForwardPathV1::V9 => self.model.forward_feature_transfer_v9_mode(view, mode),
         }
         .map_err(|e| e.to_string())?;
         Ok(FrozenPlayDecisionScoresV1 {
@@ -2375,6 +2470,7 @@ impl FrozenPlayPolicyV1 {
             .as_ref()
             .ok_or("native capture requires the V4 scorer")?;
         require(!fresh.flat_v7, "hidden capture is not defined for FlatV7")?;
+        require(!fresh.flat_v9, "hidden capture is not defined for FlatV9")?;
         let model = model.unwrap_or(&self.model);
         let (output, capture) = if fresh.flat_v8 {
             model
@@ -2554,7 +2650,15 @@ impl FrozenPlayPolicyV1 {
                 &encoded_decision_view_v3(&successor.tensor),
             )
         } else if let Some(fresh) = &self.fresh_successor {
-            if fresh.flat_v8 {
+            if fresh.flat_v9 {
+                observation_digest_v1(
+                    ForwardPathV1::TransferV9,
+                    &crate::native_flat_tensorizer_v9::encoded_decision_view_v9(
+                        &fresh.tensor.common,
+                        &fresh.pairing,
+                    ),
+                )
+            } else if fresh.flat_v8 {
                 observation_digest_v1(
                     ForwardPathV1::TransferV8,
                     &crate::native_flat_tensorizer_v8::encoded_decision_view_v8(
@@ -2600,6 +2704,24 @@ impl FrozenPlayPolicyV1 {
                 .map_err(|e| format!("V3 actor-visible encoding: {e:?}; decision={decision:?}"))?;
             self.owned.globals = encoded.globals;
             successor.extensions = encoded.extensions;
+            drop(span);
+            return self
+                .score_owned()
+                .map_err(|error| format!("{error}; decision={decision:?}"));
+        }
+        if let Some(fresh) = self.fresh_successor.as_mut().filter(|fresh| fresh.flat_v9) {
+            let span =
+                crate::search_profile_v1::span(crate::search_profile_v1::Bucket::PolicyEncode);
+            let encoded = session
+                .encode_current_flat_scoring_decision_owned_v9(
+                    decision,
+                    &mut fresh.encoder,
+                    &mut self.owned.buffers(),
+                )
+                .map_err(|e| format!("V9 actor-visible encoding: {e:?}; decision={decision:?}"))?;
+            self.owned.globals = encoded.v4.globals;
+            fresh.extensions = encoded.v4.extensions;
+            fresh.columns_v9 = encoded.columns;
             drop(span);
             return self
                 .score_owned()
@@ -2916,7 +3038,31 @@ impl FrozenPlayPolicyV1 {
                 encoded_decision_view_v3(&successor.tensor),
             )
         } else if let Some(fresh) = &mut self.fresh_successor {
-            if fresh.flat_v8 {
+            if fresh.flat_v9 {
+                fresh.tensorizer_v9.set_state_digest_v1(state_digest);
+                fresh.tensorizer_v9.set_action_digest_v1(action_digest);
+                fresh
+                    .tensorizer_v9
+                    .fill(
+                        crate::flat_policy_v6::FlatScoringDecisionViewV9 {
+                            v4: FlatScoringDecisionViewV4::new(
+                                self.owned.view(),
+                                &fresh.extensions,
+                            ),
+                            columns: &fresh.columns_v9,
+                        },
+                        &mut fresh.tensor.common,
+                        &mut fresh.pairing,
+                    )
+                    .map_err(|e| format!("V9 visible tensorization: {e:?}"))?;
+                (
+                    ForwardPathV1::TransferV9,
+                    crate::native_flat_tensorizer_v9::encoded_decision_view_v9(
+                        &fresh.tensor.common,
+                        &fresh.pairing,
+                    ),
+                )
+            } else if fresh.flat_v8 {
                 fresh.tensorizer_v8.set_state_digest_v1(state_digest);
                 fresh.tensorizer_v8.set_action_digest_v1(action_digest);
                 fresh
@@ -3083,7 +3229,7 @@ impl FrozenPlayPolicyV1 {
         require(
             self.fresh_successor
                 .as_ref()
-                .is_some_and(|fresh| !fresh.flat_v7 && !fresh.flat_v8),
+                .is_some_and(|fresh| !fresh.flat_v7 && !fresh.flat_v8 && !fresh.flat_v9),
             "native S runs on a plain FlatV4 policy",
         )?;
         require(
@@ -3120,7 +3266,7 @@ impl FrozenPlayPolicyV1 {
         let plain = self
             .fresh_successor
             .as_ref()
-            .is_some_and(|fresh| !fresh.flat_v8)
+            .is_some_and(|fresh| !fresh.flat_v8 && !fresh.flat_v9)
             && self.input_contract.is_none();
         self.s_model.as_deref().filter(|_| plain)
     }
@@ -3137,7 +3283,7 @@ impl FrozenPlayPolicyV1 {
         require(
             self.fresh_successor
                 .as_ref()
-                .is_some_and(|fresh| !fresh.flat_v7 && !fresh.flat_v8),
+                .is_some_and(|fresh| !fresh.flat_v7 && !fresh.flat_v8 && !fresh.flat_v9),
             "the wide net runs on a plain FlatV4 policy",
         )?;
         require(
@@ -3443,6 +3589,9 @@ fn uncached_forward_v1(
         ForwardPathV1::TransferV8 => model
             .forward_feature_transfer_v8_with_scratch_v1(view, scratch, mode)
             .map_err(|e| format!("explicit V8 inclusion forward: {e:?}"))?,
+        ForwardPathV1::TransferV9 => model
+            .forward_feature_transfer_v9_with_scratch_v1(view, scratch, mode)
+            .map_err(|e| format!("explicit FlatV9 forward: {e:?}"))?,
         ForwardPathV1::Flat => model
             .forward_with_scratch_v1(view, scratch, mode)
             .map_err(|e| format!("frozen scalar inference: {e:?}"))?,
@@ -3514,6 +3663,10 @@ fn cached_forward_v1(
                 model.feature_transfer_config_v8(),
                 "explicit V8 inclusion forward",
             ),
+            ForwardPathV1::TransferV9 => (
+                model.feature_transfer_config_v9(),
+                "explicit FlatV9 forward",
+            ),
             ForwardPathV1::Flat => (model.config_v1(), "frozen scalar inference"),
         };
         model
@@ -3533,6 +3686,9 @@ fn cached_forward_v1(
             ForwardPathV1::TransferV8 => model
                 .forward_feature_transfer_v8_with_scratch_v1(view, scratch, mode)
                 .map_err(|e| format!("explicit V8 inclusion forward: {e:?}"))?,
+            ForwardPathV1::TransferV9 => model
+                .forward_feature_transfer_v9_with_scratch_v1(view, scratch, mode)
+                .map_err(|e| format!("explicit FlatV9 forward: {e:?}"))?,
             ForwardPathV1::Flat => model
                 .forward_with_scratch_v1(view, scratch, mode)
                 .map_err(|e| format!("frozen scalar inference: {e:?}"))?,

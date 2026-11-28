@@ -68,6 +68,7 @@ pub(crate) fn episode(
         london_keep_offset: None,
         deck_format,
         cube_flat_action_contract: false,
+        flat_v9: false,
         max_stack_objects: None,
     }
 }
@@ -650,5 +651,54 @@ fn deck_format_limited40_admits_two_forty_card_cube_decks() {
             list.mainboard.pop();
         }
         assert!(short.configurations().unwrap_err().contains("got 39"));
+    }
+}
+
+/// FlatV9 (M2 task T6): `flat_v9` is absent by default, decodes from older
+/// positional arrays as false, starts the game's history record in the
+/// shared session (so collection and replay agree), and is refused once the
+/// game has begun.
+#[test]
+fn flat_v9_episodes_start_the_history_record() {
+    for london in [false, true] {
+        let mut cube = episode(pauper(40, 0), london, LIMITED);
+        cube.cube_flat_action_contract = true;
+        let plain = cube.clone();
+        assert!(serde_json::to_value(&plain)
+            .unwrap()
+            .get("flat_v9")
+            .is_none());
+        cube.flat_v9 = true;
+        let value = serde_json::to_value(&cube).unwrap();
+        assert_eq!(value["flat_v9"], serde_json::json!(true));
+        assert_eq!(
+            serde_json::from_value::<ExpandedEpisodeV1>(value.clone()).unwrap(),
+            cube
+        );
+        let mut older_fields = FIELD_ORDER.to_vec();
+        older_fields.extend(["max_stack_objects", "cube_flat_action_contract"]);
+        let older =
+            serde_json::from_value::<ExpandedEpisodeV1>(positional(&value, &older_fields)).unwrap();
+        assert_eq!(older, plain);
+
+        let configs = cube.configurations().unwrap();
+        let mut session = episode_session_v1(&cube, &configs).unwrap();
+        assert!(session.game_state().flat_v9_history_v1.is_some());
+        assert!(episode_session_v1(&plain, &configs)
+            .unwrap()
+            .game_state()
+            .flat_v9_history_v1
+            .is_none());
+        // The same episode gives the same history, and FlatV9 encodes it.
+        let again = episode_session_v1(&cube, &configs).unwrap();
+        assert_eq!(
+            again.game_state().flat_v9_history_v1,
+            session.game_state().flat_v9_history_v1
+        );
+        let FastActorResponseV1::Decision(d) = session.current_response() else {
+            panic!("expected a decision");
+        };
+        session.flat_v9_observation_json_v1(d).unwrap();
+        assert!(session.enable_flat_v9_history_v1().is_err(), "only once");
     }
 }

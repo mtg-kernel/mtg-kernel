@@ -55,6 +55,7 @@ fn episode(search: bool) -> ExpandedEpisodeV1 {
         max_physical_decisions: 40_000,
         max_policy_steps: 80_000,
         cube_flat_action_contract: false,
+        flat_v9: false,
         max_stack_objects: None,
         runtime_rules: None,
         reset: None,

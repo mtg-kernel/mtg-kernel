@@ -33,10 +33,6 @@
 //!
 //! Draws since placement count the owner's draws (`GameState::draw_card`).
 
-// The FlatV9 policy (T6, next change) reads the facts in production; until
-// then only the tests do.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use crate::ids::PlayerId;
 use crate::state::{GameState, ObservationNoteKindV1, Zone};
 use serde::{Deserialize, Serialize};
