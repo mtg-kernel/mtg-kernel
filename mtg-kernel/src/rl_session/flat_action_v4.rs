@@ -2421,6 +2421,7 @@ mod tests {
             );
             v7?;
             assert_eq!(allocating.unwrap(), tensors);
+            assert_eq!(scratch_v4.common, tensors);
             Ok(tensors)
         }
 
@@ -2673,12 +2674,12 @@ mod tests {
                     tensors.action_ref_card_ids[donor_ref],
                     i64::from(flat_card_token_v2(donor.card_db_id))
                 );
-                // A malformed local index or the reserved turn-face-up index
-                // is refused, not encoded.
+                // Malformed local and granted indices are refused.
                 for edit in [
                     (|row: &mut FlatScorerActionCoreV2| row.number = -1)
                         as fn(&mut FlatScorerActionCoreV2),
                     |row| row.number = 65_536,
+                    |row| row.ability_index = 0,
                     |row| row.ability_index = u8::MAX,
                 ] {
                     assert!(matches!(

@@ -7867,9 +7867,10 @@ fn encode_action_with_reference_scratch_contract_v3<'a>(
         FlatScorerActionKindV1::ActivateAbility if rows.cube_v1 && resolved.len() == 2 => {
             // `rl_session` writes a granted ability's donor as the second,
             // `card` reference and its local ability index (a u16) as
-            // `number`. Index 255 is the engine's turn-face-up action, never a
-            // granted ability.
-            if action.ability_index == u8::MAX || u16::try_from(action.number).is_err() {
+            // `number`. Granted indices start above zero, and 255 is reserved
+            // for the turn-face-up action.
+            if matches!(action.ability_index, 0 | u8::MAX) || u16::try_from(action.number).is_err()
+            {
                 return Err(NativeFlatTensorErrorV1::InvalidActionRange);
             }
             expected.ability_index = action.ability_index;
