@@ -3,7 +3,7 @@
 use crate::card_def::{CardType, Keywords, Supertype, CARD_DEFS};
 use crate::effect::{EffectObjectBinding, EffectOp, ExecCtx};
 use crate::event_history_v1::EventKindV1;
-use crate::ids::ObjectId;
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, Target, Zone};
 use serde::{Deserialize, Serialize};
 pub mod jodah;
@@ -71,6 +71,60 @@ fn binding(state: &GameState, object: ObjectId) -> EffectObjectBinding {
         expected_zone: Zone::Battlefield,
         expected_zone_change_count: state.objects.get(object).zone_change_count,
     }
+}
+
+/// The controller of Ertai's legal stack target, captured when it was
+/// targeted, before anything counters it.
+pub(crate) fn counter_target_controller(ctx: &ExecCtx, state: &GameState) -> Option<PlayerId> {
+    let Some(crate::state::StackTargetContractV4::StackItem { controller, .. }) =
+        ctx.target_contracts.first().copied()
+    else {
+        return None;
+    };
+    ctx.target_incarnation_matches(0, state)
+        .then_some(controller)
+}
+
+/// Ertai's first mode before its draw: counter the target. The drawer is the
+/// target's controller, saved before the counter; `None` draws nothing.
+pub(crate) fn counter_stack_target(ctx: &ExecCtx, state: &mut GameState) -> Option<PlayerId> {
+    let controller = counter_target_controller(ctx, state)?;
+    let Some(crate::state::StackTargetContractV4::StackItem { stack_item_id, .. }) =
+        ctx.target_contracts.first().copied()
+    else {
+        return None;
+    };
+    if crate::engine::counter_stack_item_by_id(state, stack_item_id).is_err() {
+        state.engine.halted = Some((
+            crate::engine::UnsupportedMechanic::InvalidEffectContinuation,
+            ctx.source,
+        ));
+        return None;
+    }
+    Some(controller)
+}
+
+/// The current controller of Ertai's legal permanent target.
+pub(crate) fn destroy_target_controller(ctx: &ExecCtx, state: &GameState) -> Option<PlayerId> {
+    let Some(Target::Object(target)) = ctx.targets.first().copied() else {
+        return None;
+    };
+    ctx.target_incarnation_matches(0, state)
+        .then(|| state.objects.get(target).controller)
+}
+
+/// Ertai's second mode before its draw: destroy the target. The drawer is
+/// its controller, saved before the destruction; `None` draws nothing.
+pub(crate) fn destroy_target(ctx: &ExecCtx, state: &mut GameState) -> Option<PlayerId> {
+    let controller = destroy_target_controller(ctx, state)?;
+    crate::effect::execute(
+        &EffectOp::DestroyObject {
+            object: crate::effect::ObjectRef::Target(0),
+        },
+        ctx,
+        state,
+    );
+    Some(controller)
 }
 
 pub(crate) fn execute(op: LegendEffectV1, ctx: &ExecCtx, state: &mut GameState) {
@@ -166,42 +220,20 @@ pub(crate) fn execute(op: LegendEffectV1, ctx: &ExecCtx, state: &mut GameState) 
         }
         LegendEffectV1::BindJodahCast | LegendEffectV1::JodahCastSnapshot(_) => {}
         LegendEffectV1::CounterStackTargetAndDraw => {
-            let Some(crate::state::StackTargetContractV4::StackItem {
-                stack_item_id,
-                controller,
-                ..
-            }) = ctx.target_contracts.first().copied()
-            else {
-                return;
-            };
-            if !ctx.target_incarnation_matches(0, state) {
-                return;
+            if let Some(controller) = counter_stack_target(ctx, state) {
+                crate::event::propose_and_commit(
+                    state,
+                    crate::event::ProposedEvent::draw(controller),
+                );
             }
-            if crate::engine::counter_stack_item_by_id(state, stack_item_id).is_err() {
-                state.engine.halted = Some((
-                    crate::engine::UnsupportedMechanic::InvalidEffectContinuation,
-                    ctx.source,
-                ));
-                return;
-            }
-            crate::event::propose_and_commit(state, crate::event::ProposedEvent::draw(controller));
         }
         LegendEffectV1::DestroyTargetAndDraw => {
-            let Some(Target::Object(target)) = ctx.targets.first().copied() else {
-                return;
-            };
-            if !ctx.target_incarnation_matches(0, state) {
-                return;
+            if let Some(controller) = destroy_target(ctx, state) {
+                crate::event::propose_and_commit(
+                    state,
+                    crate::event::ProposedEvent::draw(controller),
+                );
             }
-            let controller = state.objects.get(target).controller;
-            crate::effect::execute(
-                &EffectOp::DestroyObject {
-                    object: crate::effect::ObjectRef::Target(0),
-                },
-                ctx,
-                state,
-            );
-            crate::event::propose_and_commit(state, crate::event::ProposedEvent::draw(controller));
         }
         LegendEffectV1::CountersOnControlledCreatures => {
             let creatures: Vec<_> = state.players[ctx.controller.index()]

@@ -100,6 +100,9 @@ fn draws(op: &EffectOp) -> bool {
         EffectOp::StandardV1(StandardOpV1::EternalV1(EternalOpV1::E8bV1(
             crate::eternal_pauper_e8b_v1::E8bOpV1::RingLootV1,
         ))) => true,
+        // Standard leaves that stage their own draws (Kaito, Braided Quipu,
+        // Shanna, Ertai).
+        op if crate::effect::standard_staged_draws_v1::draws(op) => true,
         _ => false,
     }
 }

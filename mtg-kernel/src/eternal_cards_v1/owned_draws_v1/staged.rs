@@ -215,7 +215,8 @@ pub(crate) fn unmarked_before(state: &GameState, pending: &EffectContinuation, e
             CommittedEvent::EternalOwnedDrawV1 { journal } => match journal.as_ref() {
                 JournalV1::DrawAttemptV1 { item: owner, .. }
                 | JournalV1::GeneratedDrawV1 { item: owner, .. }
-                | JournalV1::DrawInputBatchV1 { item: owner, .. } => *owner == item,
+                | JournalV1::DrawInputBatchV1 { item: owner, .. }
+                | JournalV1::StandardStagedDrawV1 { item: owner, .. } => *owner == item,
                 JournalV1::Started(started)
                 | JournalV1::StartedWithRiddlerV1 { started, .. }
                 | JournalV1::StartedLeafV1 { started, .. } => started.item == item,

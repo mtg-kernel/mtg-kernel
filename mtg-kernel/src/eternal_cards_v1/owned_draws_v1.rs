@@ -518,6 +518,16 @@ pub enum JournalV1 {
         item: StackItemId,
         path: Vec<u16>,
     },
+    /// The drawer and count a resolving Standard leaf fixed before staging
+    /// its draw: Shanna's completed payment, Braided Quipu's artifact count,
+    /// Kaito's met condition, or the controller of Ertai's target saved
+    /// before it was countered or destroyed.
+    StandardStagedDrawV1 {
+        item: StackItemId,
+        path: Vec<u16>,
+        drawer: PlayerId,
+        count: u32,
+    },
 }
 
 impl JournalV1 {
