@@ -122,7 +122,9 @@ class AcceptTests(CubeCase):
                 self.assertIsNone(receipt["schedule"]["first_difference"])
             else:
                 self.assertEqual(receipt["schema"], rr.CUBE_SCHEMA)
-                self.assertEqual(receipt["failing_requirements"], [])
+                expected = ["gate1.external_pins_sha256", "gate1.non_placeholder_play_import",
+                            "recipe.engine_windows"] if extra else []
+                self.assertEqual(receipt["failing_requirements"], expected)
                 self.assertFalse(receipt["production"])
                 self.assertEqual(receipt["gate1_to_fill"], [f"gate1.{item}" for item in rr.GATE1_ITEMS])
                 self.assertEqual(receipt["pass"], not extra)
@@ -141,7 +143,8 @@ class AcceptTests(CubeCase):
         first, second = copy.deepcopy(whole), copy.deepcopy(whole)
         first["iterations"], second["iterations"] = whole["iterations"][:1], whole["iterations"][1:]
         second["output_directory"] = "segment-1"
-        second["initial_source"] = {"play_import": {"path": "x.json", "sha256": "1" * 64}, "checkpoint": None}
+        second["initial_source"]["play_import"]["path"] = "staged-import.json"
+        second["initial_source"]["checkpoint"] = {"path": "prior-update.json", "sha256": "1" * 64}
         code, receipt = self.parity(self.write([first, second]))
         self.assertEqual(code, 0, receipt and self.failed(receipt))
         self.assertEqual(receipt["per_segment_fields"][1]["output_directory"], "segment-1")
@@ -154,11 +157,48 @@ class AcceptTests(CubeCase):
             docs["pins"]["gate1"][item]["fixture"] = False
         docs["pins"]["gate1"]["card_semantics"]["value"] = docs["base"]["card_semantics"]
         docs["pins"]["gate1"]["flatv9_play_import_sha256"]["value"] = "3" * 64
+        docs["pins"]["episode"]["priority_windows"] = ["engine-windows-v1"] * 2
         config = rp.cube_segment_config(DEALER, docs["pool"], docs["constants"], docs["base"], docs["pins"])
-        code, receipt = self.receipt(self.write([config], docs), "--production")
+        args = self.write([config], docs)
+        code, receipt = self.receipt(args, "--production", "--cube-pins-sha256",
+                                     sha((self.dir / NAMES["pins"]).read_bytes()))
         self.assertEqual(code, 0, receipt and receipt["failing_requirements"])
         self.assertTrue(receipt["production"])
         self.assertEqual(receipt["gate1_to_fill"], [])
+
+        trusted_digest = sha((self.dir / NAMES["pins"]).read_bytes())
+        config["initial_source"]["checkpoint"] = {"path": "other.json", "sha256": "4" * 64}
+        code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", trusted_digest)
+        self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.segment_checkpoints"]))
+        docs["pins"]["checkpoint_sha256_by_config"] = ["4" * 64]
+        code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", trusted_digest)
+        self.assertEqual((code, receipt["failing_requirements"]), (1, ["gate1.external_pins_sha256"]))
+        new_digest = sha((self.dir / NAMES["pins"]).read_bytes())
+        code, receipt = self.receipt(self.write([config], docs), "--production", "--cube-pins-sha256", new_digest)
+        self.assertEqual((code, receipt["failing_requirements"]), (0, []))
+
+
+    def test_relabelled_fixtures_cannot_make_a_production_receipt(self):
+        docs = copy.deepcopy(self.docs)
+        for entry in docs["pins"]["gate1"].values():
+            entry["fixture"] = False
+        args = self.write([segment()], docs)
+        code, receipt = self.receipt(args, "--production")
+        self.assertEqual(code, 1)
+        self.assertFalse(receipt["production"])
+        self.assertIn("gate1.external_pins_sha256", receipt["failing_requirements"])
+        self.assertIn("gate1.non_placeholder_play_import", receipt["failing_requirements"])
+
+    def test_different_initial_source_refuses_before_receipting_the_segment(self):
+        mutations = (
+            {"unrelated": True},
+            {"play_import": {"path": "other.json", "sha256": "1" * 64}, "checkpoint": None},
+        )
+        for source in mutations:
+            config = segment()
+            config["initial_source"] = source
+            code, receipt = self.parity(self.write([config]))
+            self.assertEqual((code, self.failed(receipt)), (1, ["run_fields_equal_the_base"]))
 
 
 class DeckIdentityTests(CubeCase):

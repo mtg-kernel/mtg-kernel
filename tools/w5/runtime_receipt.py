@@ -36,7 +36,8 @@ every match of every pinned H request. The scorer is recorded (the board run rec
 arguments are refused with it, and without it nothing above changes):
 
   runtime_receipt.py --training-config SEGMENT.json [...] --cube-pins PINS.json --cube-pool POOL.json
-      --cube-constants CONSTANTS.json --cube-base BASE.json [--production] [--out RECEIPT.json]
+      --cube-constants CONSTANTS.json --cube-base BASE.json
+      [--production --cube-pins-sha256 SIGNED_DIGEST] [--out RECEIPT.json]
 
 The raw cube receipt of `runtime_parity.py` is recomputed and must pass. The segment is then bound to the signed M3
 Stage 1 declaration (draft 3, signed text SHA-256 below): the dealer, cube list, gaps and fence_v3 hashes, the 15
@@ -48,8 +49,10 @@ fraction `max(1, floor(0.0625 N)) / N` as an f32 with N = 2 `pairs_per_update`. 
 
 Identities that only Gate 1 can fix (M3.10; T6, T8 and T9 are not merged) come from the pins' `gate1` block, one
 entry per item in `GATE1_ITEMS`, each `{fixture, owner, section, value}`; the value must equal what the inputs
-show. An entry with `fixture: true` is reported as `fixture` and listed under `gate1_to_fill`; `production` is true
-only with none. `--production` makes a fixture fail the receipt. Gate 1 must fill: the compiled `KERNEL_CARDDB_HASH`,
+show. An entry with `fixture: true` is reported as `fixture` and listed under `gate1_to_fill`. Production requires
+all values filled, the ruled engine windows, a non-placeholder import hash, and `--cube-pins-sha256` from the
+signed Gate 1 manifest. Production also checks each resume checkpoint against the signed pins'
+`checkpoint_sha256_by_config` list in input order. Fresh configs use null; if omitted, all are fresh. Gate 1 must fill: the compiled `KERNEL_CARDDB_HASH`,
 the `cube_card_ids/v1` export SHA-256, the active pool SHA-256, T9's `pairs_per_update` (N / 2) and the
 `m3_train_constants.json` SHA-256, T6's FlatV9 initial-source play import, and T8's `card_semantics` block (Arm E).
 """
@@ -344,12 +347,33 @@ def cube_main(args, parser) -> int:
     except (ReceiptError, rp.ParityError, KeyError, ValueError, TypeError, AttributeError) as exc:
         print(f"error: {exc!r}", file=sys.stderr)
         return 1
-    failing = [r["id"] for r in requirements if r["status"] == "fails"]
     fixtures = [r["id"] for r in requirements if r["status"] == "fixture"]
+    if args.production or args.cube_pins_sha256 is not None:
+        trusted = args.cube_pins_sha256
+        import_sha = gate1_observed(raw, docs["pool"], docs["constants"], docs["base"])["flatv9_play_import_sha256"]
+        windows = docs["pins"]["episode"].get("priority_windows")
+        checkpoints = []
+        for fields in raw["per_segment_fields"]:
+            source = fields.get("initial_source")
+            checkpoint = source.get("checkpoint") if isinstance(source, dict) else None
+            checkpoints.append(checkpoint.get("sha256") if isinstance(checkpoint, dict) else None)
+        expected_checkpoints = docs["pins"].get("checkpoint_sha256_by_config", [None] * len(args.training_config))
+        requirements.extend([
+            requirement("gate1.external_pins_sha256", "M3.10", trusted, raw["inputs"]["pins_sha256"],
+                        rp.is_sha256(trusted) and trusted == raw["inputs"]["pins_sha256"]),
+            requirement("gate1.non_placeholder_play_import", "M3.4 and M3.10", "nonzero SHA-256", import_sha,
+                        rp.is_sha256(import_sha) and import_sha != "0" * 64),
+            requirement("gate1.segment_checkpoints", "M3.5 and M3.10", expected_checkpoints, checkpoints,
+                        rp.same_json(checkpoints, expected_checkpoints)),
+            requirement("recipe.engine_windows", "M3.4 and DECISIONS-2", ["engine-windows-v1"] * 2, windows,
+                        rp.same_json(windows, ["engine-windows-v1"] * 2)),
+        ])
+    failing = [r["id"] for r in requirements if r["status"] == "fails"]
+    production = args.cube_pins_sha256 is not None and not fixtures and not failing
     receipt = {
         "schema": CUBE_SCHEMA,
-        "pass": raw["pass"] and not failing and not (args.production and fixtures),
-        "production": not fixtures, "production_required": args.production,
+        "pass": raw["pass"] and not failing and (not args.production or production),
+        "production": production, "production_required": args.production,
         "raw_failures": sorted(k for k, v in raw["checks"].items() if not v),
         "failing_requirements": failing, "gate1_to_fill": fixtures,
         "declaration": M3_DECLARATION, "segment": raw["schedule"]["segment"], "requirements": requirements,
@@ -367,7 +391,8 @@ def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     cube = any(arg == "--cube-pins" or arg.startswith("--cube-pins=") for arg in argv)
     pauper = not cube
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    description = __doc__ if cube else __doc__.split("\n\n**Cube segments**", 1)[0]
+    parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--training-config", type=Path, action="append", required=True)
     parser.add_argument("--board-run", type=Path, required=pauper)
     parser.add_argument("--board-snapshot", type=Path, required=pauper)
@@ -389,11 +414,13 @@ def main(argv=None) -> int:
     parser.add_argument("--cube-constants", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--cube-base", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--production", action="store_true", help=argparse.SUPPRESS)  # see "Cube segments"
+    parser.add_argument("--cube-pins-sha256", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.cube_pins is not None:
         return cube_main(args, parser)
-    if args.production or any(v is not None for v in (args.cube_pool, args.cube_constants, args.cube_base)):
-        parser.error("--cube-pool, --cube-constants, --cube-base and --production need --cube-pins")
+    if args.production or any(v is not None for v in (args.cube_pool, args.cube_constants, args.cube_base,
+                                                       args.cube_pins_sha256)):
+        parser.error("Cube arguments require --cube-pins")
     try:
         raw_receipt_path = (args.out or Path("runtime-parity-raw.json")).with_suffix(".raw.json")
         raw_receipt_path.unlink(missing_ok=True)  # never reuse an earlier raw receipt

@@ -76,7 +76,8 @@ T1; `cube_flat_action_contract: true`, T4). Every check must hold:
   share no nonbasic card.
 - **Episode opt-ins:** every episode carries exactly the pinned opt-ins.
 - **Run fields:** every segment config equals the base outside `iterations`, `output_directory` and
-  `initial_source` (the chain sets those two per segment; they are recorded).
+  `initial_source`. The model source retains the base import hash and transfer settings; later segments may
+  supply a pinned checkpoint. Output paths and the model sources are recorded.
 - **Schedule:** the segment's iterations, in order across the configs, equal the dealer's replay of the pinned
   segment from the supplied pool, constants and base, stamped with the opt-ins (`cube_segment_config`): episode ids,
   seeds, seats, decks, limits and opponents. The first difference is recorded.
@@ -451,7 +452,7 @@ def sha256(data: bytes) -> str:
 DEALT_EPISODE_KEYS = frozenset({"id", "seed", "starting_player", "learner_seat", "registered", "selected", "postboard",
                                 "max_physical_decisions", "max_policy_steps", "runtime_rules", "opening",
                                 "mulligan_modes"})
-STAMPED_EPISODE_KEYS = frozenset(CUBE_OPT_INS) | {"max_stack_objects"}  # seat-independent fields the pins may stamp
+STAMPED_EPISODE_KEYS = frozenset(CUBE_OPT_INS) | {"max_stack_objects", "priority_windows"}  # seat-independent fields the pins may stamp
 
 
 def load_dealer():
@@ -569,6 +570,34 @@ def first_schedule_difference(actual: list, expected: list) -> dict | None:
     return None
 
 
+def initial_model_identity(source):
+    if not isinstance(source, dict) or not isinstance(source.get("play_import"), dict):
+        return None
+    play_import = source["play_import"]
+    if not is_sha256(play_import.get("sha256")):
+        return None
+    # A chain can stage the same import at a different path. Its identity
+    # and feature transfer stay fixed while the trainer advances checkpoints.
+    return {
+        **{k: v for k, v in source.items() if k not in ("checkpoint", "play_import")},
+        "play_import": {k: v for k, v in play_import.items() if k != "path"},
+    }
+
+
+def cube_model_sources_match(configs: list[dict], base: dict) -> bool:
+    expected = initial_model_identity(base.get("initial_source"))
+    if expected is None:
+        return False
+    for config in configs:
+        source = config.get("initial_source")
+        if not same_json(initial_model_identity(source), expected):
+            return False
+        checkpoint = source.get("checkpoint")
+        if checkpoint is not None and (not isinstance(checkpoint, dict) or not is_sha256(checkpoint.get("sha256"))):
+            return False
+    return True
+
+
 def run_fields(config: dict) -> dict:
     return {k: v for k, v in config.items() if k != "iterations" and k not in CUBE_PER_SEGMENT_KEYS}
 
@@ -601,7 +630,8 @@ def cube_compare(configs: list[dict], pins: dict, pool_doc: dict, constants_doc:
         "decks_are_dealt_cube_decks": decks["violating_episodes"] == 0 and decks["episodes"] > 0,
         "episodes_carry_the_pinned_opt_ins": all(all(k in ep and same_json(ep[k], v) for k, v in pins["episode"].items())
                                                  for c in configs for ep in episodes(c)),
-        "run_fields_equal_the_base": all(same_json(run_fields(c), run_fields(base_doc)) for c in configs),
+        "run_fields_equal_the_base": all(same_json(run_fields(c), run_fields(base_doc)) for c in configs)
+        and cube_model_sources_match(configs, base_doc),
         "schedule_equals_the_dealer": difference is None,
     }
     return {"checks": checks, "decks": decks,
@@ -653,7 +683,8 @@ def cube_main(args, parser) -> int:
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     cube = any(arg == "--cube-pins" or arg.startswith("--cube-pins=") for arg in argv)
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    description = __doc__ if cube else __doc__.split("\n\n**Cube segments**", 1)[0]
+    parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--training-config", type=Path, action="append", required=True)
     parser.add_argument("--board-run", type=Path, required=not cube)
     parser.add_argument("--repo", type=Path, required=not cube)
