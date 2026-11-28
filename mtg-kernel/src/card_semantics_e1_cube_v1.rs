@@ -59,11 +59,19 @@ pub fn declared_config_v1(repo_root: &Path) -> CardSemanticsConfigV1 {
 }
 
 /// The `PilotPin.table_sha256` a collector built on `config` must carry
-/// under arm E: the table file's SHA-256, returned only after the arm E
-/// reader has loaded the table (file digest, schema, card database hash,
+/// under arm E. `config` must name the declared table ([`TABLE_SHA256_V1`]);
+/// any other table, the provisional one included, is refused even when the
+/// reader would load it. The digest is returned only after the arm E reader
+/// has loaded the table (file digest, size, schema, card database hash,
 /// dimensions and integers checked), so the pin names exactly the table the
 /// trainer reads.
 pub fn pilot_table_sha256_v1(config: &CardSemanticsConfigV1) -> Result<String, String> {
+    if config.table_sha256 != TABLE_SHA256_V1 {
+        return Err(format!(
+            "arm E pins the declared cube table {TABLE_SHA256_V1}, not {}",
+            config.table_sha256
+        ));
+    }
     config.load_v1()?;
     Ok(config.table_sha256.clone())
 }
@@ -88,6 +96,9 @@ struct TableRowV1 {
     card_id: usize,
     vector: Vec<i32>,
 }
+
+/// The largest table file the arm E reader reads (`card_projection_e1`).
+pub const TABLE_FILE_CAP_V1: u64 = TABLE_MAX_BYTES_V1;
 
 /// Parses `table_bytes` and applies every check the arm E reader applies
 /// (`card_projection_e1`): size, schema, compiled card database hash, a vector

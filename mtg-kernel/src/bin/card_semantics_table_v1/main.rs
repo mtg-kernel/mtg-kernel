@@ -185,16 +185,6 @@ fn generate_cube(repo: &Path, cube_prior: &[(String, String)]) -> Result<Generat
     })
 }
 
-/// The cube table's committed column order: the full table's, or before the
-/// full table exists, the provisional table's (so the full table keeps every
-/// provisional column at its index). The provisional table must exist.
-fn cube_prior(repo: &Path) -> Result<Vec<(String, String)>, String> {
-    match read_optional(repo, table::CUBE_TABLE_PATH)? {
-        Some(text) => table::try_committed_vocabulary(&text),
-        None => provisional_columns(repo),
-    }
-}
-
 /// The provisional cube table's columns, read once and only when its bytes
 /// are the ones M4 pins.
 fn provisional_columns(repo: &Path) -> Result<Vec<(String, String)>, String> {
@@ -212,16 +202,21 @@ fn provisional_columns(repo: &Path) -> Result<Vec<(String, String)>, String> {
 
 /// `--cube --write`: under the cube writer lock, generates the full table,
 /// refuses it unless it keeps every provisional column at its index, computes
-/// its arm E scales (M2 T8) before any output is opened, publishes the table
-/// and dump, then publishes the scales by an atomic rename from the staging
-/// directory. `--cube --check` catches a run interrupted between the two
-/// publications.
+/// its arm E scales (M2 T8) before any output is opened, then stages the
+/// table, dump and scales together and publishes the table last, restoring
+/// the dump and scales if a later rename fails.
 fn regenerate_cube(repo: &Path) -> Result<(), String> {
     with_writer_lock(repo, table::CUBE_TABLE_PATH, || {
-        let prior = cube_prior(repo)?;
+        // The provisional columns are read once: they seed the first full
+        // table and bound every later one.
+        let provisional = provisional_columns(repo);
+        let prior = match read_optional(repo, table::CUBE_TABLE_PATH)? {
+            Some(text) => table::try_committed_vocabulary(&text)?,
+            None => provisional.clone()?,
+        };
         let mut generated = generate_cube(repo, &prior)?;
         let columns = table::try_committed_vocabulary(&generated.table_text)?;
-        match provisional_columns(repo) {
+        match provisional {
             Ok(provisional) if columns.starts_with(&provisional) => {}
             Ok(_) => generated.failures.push(format!(
                 "generated cube table does not keep the columns of {}",
@@ -232,13 +227,14 @@ fn regenerate_cube(repo: &Path) -> Result<(), String> {
         print!("{}", generated.report);
         require_checks(&generated.failures)?;
         let scales = cube_scales_text(&generated.table_text)?;
-        write_outputs_at(
+        publish_staged_with(
             repo,
             table::CUBE_TABLE_PATH,
             table::CUBE_DUMP_PATH,
             &generated,
-        )?;
-        publish_cube_scales(repo, &scales)
+            Some((cube_scales_path(), &scales)),
+            rename_file,
+        )
     })
 }
 
@@ -359,18 +355,6 @@ fn cube_scales_text(table_text: &str) -> Result<String, String> {
 #[cfg(not(feature = "eternal-fixtures"))]
 fn cube_scales_text(_table_text: &str) -> Result<String, String> {
     Err(CUBE_FEATURE_ERR.to_string())
-}
-
-/// Publishes the scales text: written in the cube table's staging directory,
-/// then renamed over the committed file. The caller holds the writer lock.
-fn publish_cube_scales(repo: &Path, text: &str) -> Result<(), String> {
-    let path = cube_scales_path();
-    let staged = staging_dir(repo, table::CUBE_TABLE_PATH).join("scales.json");
-    std::fs::write(&staged, text).map_err(|e| format!("{}: {e}", staged.display()))?;
-    rename_file(&staged, &repo.join(path)).map_err(|e| {
-        let _ = std::fs::remove_file(&staged);
-        format!("{path}: {e}")
-    })
 }
 
 #[cfg(feature = "eternal-fixtures")]
@@ -534,6 +518,80 @@ fn publish_staged(
     table_rel: &str,
     dump_rel: &str,
     generated: &Generated,
+    rename: impl FnMut(&Path, &Path) -> io::Result<()>,
+) -> Result<(), String> {
+    publish_staged_with(repo, table_rel, dump_rel, generated, None, rename)
+}
+
+/// The companion file staged with a table (the cube table's arm E scales).
+const NEXT_COMPANION_FILE: &str = "companion.json";
+/// The companion saved before publication; like [`PREVIOUS_DUMP_FILE`] it
+/// survives only a failed rollback, as the only copy of the old companion.
+const PREVIOUS_COMPANION_FILE: &str = "previous-companion.json";
+
+/// One published output and the copy saved before publication.
+struct Restore<'a> {
+    saved: &'a Path,
+    target: &'a Path,
+    /// Whether a previous file existed (else restoring removes the output).
+    had: bool,
+}
+
+/// A failed restore: the saved copy left on disk (none when no previous file
+/// existed) and the error.
+type RestoreFailure<'a> = (Option<&'a Path>, String);
+
+/// Restores every published output, later ones first, and returns the
+/// outputs that could not be put back.
+fn restore_all<'a>(
+    published: &[Restore<'a>],
+    rename: &mut impl FnMut(&Path, &Path) -> io::Result<()>,
+) -> Vec<RestoreFailure<'a>> {
+    let mut failed = Vec::new();
+    for output in published.iter().rev() {
+        let back = if output.had {
+            rename(output.saved, output.target)
+        } else {
+            std::fs::remove_file(output.target)
+        };
+        if let Err(e) = back {
+            let kept = if output.had {
+                output.saved.display().to_string()
+            } else {
+                "nothing (no previous file existed)".to_string()
+            };
+            failed.push((
+                output.had.then_some(output.saved),
+                format!(
+                    "could not restore {}: {e}; retained {kept}",
+                    output.target.display()
+                ),
+            ));
+        }
+    }
+    failed
+}
+
+/// The publication error: the failed rename, then any failed restore.
+fn restore_error(target: &Path, e: io::Error, failed: &[RestoreFailure<'_>]) -> String {
+    let mut message = format!("{}: {e}", target.display());
+    for (_, failure) in failed {
+        message.push_str("; ");
+        message.push_str(failure);
+    }
+    message
+}
+
+/// [`publish_staged`] with an optional companion output `(path, text)`.
+/// Every output is staged and every previous file saved before the first
+/// rename; the dump, then the companion, then the canonical JSON are renamed,
+/// and a failed later rename restores the earlier outputs.
+fn publish_staged_with(
+    repo: &Path,
+    table_rel: &str,
+    dump_rel: &str,
+    generated: &Generated,
+    companion: Option<(&str, &str)>,
     mut rename: impl FnMut(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), String> {
     use std::fs;
@@ -543,60 +601,88 @@ fn publish_staged(
     let next_table = stage.join("table.json");
     let next_dump = stage.join("dump.txt");
     let old_dump = stage.join(PREVIOUS_DUMP_FILE);
-    match fs::symlink_metadata(&old_dump) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Ok(_) => {
-            return Err(format!(
-                "{} holds the dump retained by an earlier failed or interrupted publication; \
-                 reconcile {} and {} with it (restore it as the dump or delete it), then rerun",
-                old_dump.display(),
-                dump.display(),
-                table.display()
-            ));
+    let next_companion = stage.join(NEXT_COMPANION_FILE);
+    let old_companion = stage.join(PREVIOUS_COMPANION_FILE);
+    let companion_path = companion.map(|(rel, _)| repo.join(rel));
+    for (retained, of) in [(&old_dump, "dump"), (&old_companion, "companion")] {
+        match fs::symlink_metadata(retained) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                return Err(format!(
+                    "{} holds the {of} retained by an earlier failed or interrupted publication; \
+                     reconcile {} and {} with it (restore it as the {of} or delete it), then rerun",
+                    retained.display(),
+                    dump.display(),
+                    table.display()
+                ));
+            }
+            Err(e) => return Err(format!("{}: {e}", retained.display())),
         }
-        Err(e) => return Err(format!("{}: {e}", old_dump.display())),
     }
     fs::create_dir_all(&stage).map_err(|e| format!("{}: {e}", stage.display()))?;
     let at = |path: &Path, e: io::Error| format!("{}: {e}", path.display());
+    let save = |from: &Path, to: &Path| -> Result<bool, String> {
+        match fs::copy(from, to) {
+            Ok(_) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(format!("{} -> {}: {e}", from.display(), to.display())),
+        }
+    };
     let mut preserve_old_dump = false;
+    let mut preserve_old_companion = false;
     let result = (|| -> Result<(), String> {
         fs::write(&next_table, &generated.table_text).map_err(|e| at(&next_table, e))?;
         fs::write(&next_dump, &generated.dump_text).map_err(|e| at(&next_dump, e))?;
-        let had_dump = match fs::copy(&dump, &old_dump) {
-            Ok(_) => true,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
-            Err(e) => return Err(format!("{} -> {}: {e}", dump.display(), old_dump.display())),
+        if let Some((_, text)) = companion {
+            fs::write(&next_companion, text).map_err(|e| at(&next_companion, e))?;
+        }
+        let had_dump = save(&dump, &old_dump)?;
+        let had_companion = match &companion_path {
+            Some(path) => save(path, &old_companion)?,
+            None => false,
         };
         rename(&next_dump, &dump).map_err(|e| at(&dump, e))?;
-        if let Err(e) = rename(&next_table, &table) {
-            let rollback = if had_dump {
-                rename(&old_dump, &dump)
-            } else {
-                fs::remove_file(&dump)
-            };
-            if let Err(rollback_error) = rollback {
-                preserve_old_dump = had_dump;
-                let retained = if had_dump {
-                    old_dump.display().to_string()
-                } else {
-                    "nothing (no previous dump existed)".to_string()
-                };
-                return Err(format!(
-                    "{}: {e}; could not restore {}: {rollback_error}; retained {retained}",
-                    table.display(),
-                    dump.display()
-                ));
+        let dump_restore = Restore {
+            saved: &old_dump,
+            target: &dump,
+            had: had_dump,
+        };
+        let mut published = vec![dump_restore];
+        if let Some(path) = &companion_path {
+            if let Err(e) = rename(&next_companion, path) {
+                let failed = restore_all(&published, &mut rename);
+                preserve_old_dump = failed
+                    .iter()
+                    .any(|(kept, _)| *kept == Some(old_dump.as_path()));
+                return Err(restore_error(path, e, &failed));
             }
-            return Err(at(&table, e));
+            published.push(Restore {
+                saved: &old_companion,
+                target: path,
+                had: had_companion,
+            });
+        }
+        if let Err(e) = rename(&next_table, &table) {
+            let failed = restore_all(&published, &mut rename);
+            preserve_old_dump = failed
+                .iter()
+                .any(|(kept, _)| *kept == Some(old_dump.as_path()));
+            preserve_old_companion = failed
+                .iter()
+                .any(|(kept, _)| *kept == Some(old_companion.as_path()));
+            return Err(restore_error(&table, e, &failed));
         }
         Ok(())
     })();
     // Attempt every step; only the generator's own staged files are removed.
     // The staging directory stays: it holds the permanent writer lock.
     let mut cleanup = Vec::new();
-    let mut owned = vec![&next_table, &next_dump];
+    let mut owned = vec![&next_table, &next_dump, &next_companion];
     if !preserve_old_dump {
         owned.push(&old_dump);
+    }
+    if !preserve_old_companion {
+        owned.push(&old_companion);
     }
     for file in owned {
         match fs::remove_file(file) {
@@ -1607,13 +1693,13 @@ mod tests {
             "mtg-kernel/src/cube_draft_build_v1/nested/loader.rs",
             integration_test,
             "mtg-kernel/src/card_semantics_e1_cube_v1.rs",
-            "mtg-kernel/src/card_semantics_e1_cube_v1/tests.rs",
+            "mtg-kernel/tests/eternal/card_semantics_e1_cube_v1.rs",
         ];
         let denied = [
             "mtg-kernel/src/cube_draft_build_v1_extra/loader.rs",
             "mtg-kernel/tests/eternal/cube_draft_build_v1.rs.bak",
             "mtg-kernel/src/card_semantics_e1_cube_v1.rs.bak",
-            "mtg-kernel/src/card_semantics_e1_cube_v1_extra/reader.rs",
+            "mtg-kernel/src/card_semantics_e1_cube_v1/reader.rs",
         ];
         for path in allowed.into_iter().chain(denied) {
             let path = temp.join(path);
@@ -1630,6 +1716,64 @@ mod tests {
         hits.sort();
         std::fs::remove_dir_all(temp).unwrap();
         assert_eq!(hits, expected);
+    }
+
+    /// M2 T8: a consumer that reaches the full table through the arm E cube
+    /// module's exported path names no table file, so the module name is a
+    /// needle too; only its exact declarations are exempt.
+    #[test]
+    fn arm_e_cube_module_imports_outside_its_declarations_are_flagged() {
+        let temp = scratch_repo("arm-e-module-imports");
+        let write = |path: &str, text: &str| {
+            let path = temp.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write(
+            "mtg-kernel/src/lib.rs",
+            "#[cfg(feature = \"eternal-fixtures\")]\npub mod card_semantics_e1_cube_v1;\n",
+        );
+        write(
+            "mtg-kernel/tests/eternal_integration.rs",
+            "#[path = \"eternal/card_semantics_e1_cube_v1.rs\"]\nmod card_semantics_e1_cube_v1;\n",
+        );
+        write(
+            "python/tools/rust_integration_module_seconds.json",
+            "{\"note\": \"bonder, card_semantics_e1_cube_v1, cube\", \"card_semantics_e1_cube_v1\": 1}\n",
+        );
+        let consumer = "mtg-kernel/src/undeclared_reader_v1.rs";
+        write(
+            consumer,
+            "use crate::card_semantics_e1_cube_v1::TABLE_PATH_V1;\n",
+        );
+        let reexport = "mtg-kernel/examples/reexport_v1.rs";
+        write(
+            reexport,
+            "pub mod card_semantics_e1_cube_v1;\nuse mtg_kernel::card_semantics_e1_cube_v1::TABLE_PATH_V1;\n",
+        );
+        let hits: Vec<_> = checks::unreferenced(&temp)
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        let mut expected = vec![temp.join(reexport), temp.join(consumer)];
+        expected.sort();
+        // The declarations alone are not hits; a second line in lib.rs is.
+        write(
+            "mtg-kernel/src/lib.rs",
+            "pub mod card_semantics_e1_cube_v1;\npub use card_semantics_e1_cube_v1::TABLE_PATH_V1;\n",
+        );
+        let with_lib: Vec<_> = checks::unreferenced(&temp)
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        std::fs::remove_dir_all(temp).unwrap();
+        let mut hits_sorted = hits;
+        hits_sorted.sort();
+        assert_eq!(hits_sorted, expected);
+        assert!(
+            with_lib.iter().any(|p| p.ends_with("lib.rs")),
+            "{with_lib:?}"
+        );
     }
 
     #[cfg(not(feature = "limited-fdn-fixtures"))]
@@ -1814,7 +1958,6 @@ mod tests {
             &read(&repo, table::CUBE_PROVISIONAL_TABLE_PATH).unwrap(),
         )
         .unwrap();
-        assert_eq!(cube_prior(&repo).unwrap()[..provisional.len()], provisional);
         let generated = generate_cube(&repo, &provisional).unwrap();
         assert!(generated.failures.is_empty(), "{:#?}", generated.failures);
         let vocab = table::try_committed_vocabulary(&generated.table_text).unwrap();

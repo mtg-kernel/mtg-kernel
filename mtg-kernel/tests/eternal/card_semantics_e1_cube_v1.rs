@@ -154,6 +154,21 @@ fn collector_pin_table_sha256_equals_the_declared_table_digest() {
     };
     let declared = pin(TABLE_SHA256_V1.to_owned());
     verify_pilot_pin_match(&declared, &pin(table_sha256)).unwrap();
+    // The provisional table loads in the reader but is not the arm E pin.
+    let root = repo_root();
+    let provisional_bytes = std::fs::read(root.join(PROVISIONAL_TABLE_PATH_V1)).unwrap();
+    let provisional = CardSemanticsConfigV1 {
+        table_path: root.join(PROVISIONAL_TABLE_PATH_V1),
+        table_sha256: sha256(&provisional_bytes),
+    };
+    reader_binding_v1(&provisional).expect("the reader loads the provisional table");
+    assert!(pilot_table_sha256_v1(&provisional).is_err());
+    // The declared digest on another file fails the reader's digest check.
+    let mislabeled = CardSemanticsConfigV1 {
+        table_sha256: TABLE_SHA256_V1.to_owned(),
+        ..provisional
+    };
+    assert!(pilot_table_sha256_v1(&mislabeled).is_err());
     // A table the reader refuses never yields a pin.
     let stale = CardSemanticsConfigV1 {
         table_sha256: "00".repeat(32),
@@ -280,7 +295,7 @@ fn scales_and_row_check_refuse_what_the_reader_refuses() {
     assert_eq!(missing_rows_v1(&bytes, &ids).unwrap(), Vec::<u16>::new());
 
     // Trailing whitespace keeps the table valid JSON while exceeding the reader's cap.
-    bytes.resize(64 * 1024 * 1024 + 1, b' ');
+    bytes.resize(TABLE_FILE_CAP_V1 as usize + 1, b' ');
     let path = root.join("table-oversize.json");
     std::fs::write(&path, &bytes).unwrap();
     let config = CardSemanticsConfigV1 {
@@ -296,6 +311,8 @@ fn scales_and_row_check_refuse_what_the_reader_refuses() {
         missing_rows_v1(&bytes, &ids).is_err(),
         "row check accepts oversize"
     );
+    bytes.truncate(TABLE_FILE_CAP_V1 as usize);
+    assert!(scales_v1(&bytes).is_ok(), "a table at the cap is accepted");
     std::fs::remove_dir_all(&root).unwrap();
 }
 

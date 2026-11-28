@@ -769,6 +769,35 @@ pub fn cube_report(
     report
 }
 
+/// The arm E cube module (M2 T8), which exports the full table's path: a
+/// file that names it reaches the table as surely as one that names the path.
+pub const ARM_E_CUBE_MODULE: &str = "card_semantics_e1_cube_v1";
+
+/// The only places the arm E cube module may be named outside its own
+/// files: its declarations (file, exact text removed before the scan).
+pub const ARM_E_CUBE_DECLARATIONS: [(&str, &str); 5] = [
+    (
+        "mtg-kernel/src/lib.rs",
+        "pub mod card_semantics_e1_cube_v1;",
+    ),
+    (
+        "mtg-kernel/tests/eternal_integration.rs",
+        "#[path = \"eternal/card_semantics_e1_cube_v1.rs\"]",
+    ),
+    (
+        "mtg-kernel/tests/eternal_integration.rs",
+        "mod card_semantics_e1_cube_v1;",
+    ),
+    (
+        "python/tools/rust_integration_module_seconds.json",
+        "\"card_semantics_e1_cube_v1\":",
+    ),
+    (
+        "python/tools/rust_integration_module_seconds.json",
+        "card_semantics_e1_cube_v1, ",
+    ),
+];
+
 /// Find references to the table, its directory, or its generator outside
 /// the generator and the declared consumers.
 pub fn unreferenced(repo: &Path) -> Vec<String> {
@@ -776,6 +805,7 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
         "card_semantics_table_v1",
         "card_semantics_v1",
         "cube_table_v1",
+        ARM_E_CUBE_MODULE,
     ];
     let roots = [
         "mtg-kernel/src",
@@ -806,9 +836,13 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
     let read_executor_dir = repo.join("mtg-kernel/examples/cube_pod_runner");
     // M4 D7 read executor verifies the ordered pool with D1's loader under D0.3 to D0.5.
     let read_executor_example = repo.join("mtg-kernel/examples/cube_pod_runner_v1.rs");
-    // M2 T8: arm E's declared cube table and scales pins and their tests.
+    // M2 T8: arm E's declared cube table and scales pins, and its tests.
     let arm_e_cube = repo.join("mtg-kernel/src/card_semantics_e1_cube_v1.rs");
-    let arm_e_cube_dir = repo.join("mtg-kernel/src/card_semantics_e1_cube_v1");
+    let arm_e_cube_test = repo.join("mtg-kernel/tests/eternal/card_semantics_e1_cube_v1.rs");
+    let declarations: Vec<(std::path::PathBuf, &str)> = ARM_E_CUBE_DECLARATIONS
+        .iter()
+        .map(|(file, text)| (repo.join(file), *text))
+        .collect();
     let mut hits = Vec::new();
     let mut stack: Vec<std::path::PathBuf> = roots.iter().map(|r| repo.join(r)).collect();
     while let Some(path) = stack.pop() {
@@ -822,7 +856,7 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
             || path.starts_with(&read_executor_dir)
             || (path.components().eq(read_executor_example.components()) && path.is_file())
             || (path.components().eq(arm_e_cube.components()) && path.is_file())
-            || path.starts_with(&arm_e_cube_dir)
+            || (path.components().eq(arm_e_cube_test.components()) && path.is_file())
         {
             continue;
         }
@@ -838,7 +872,12 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
                 stack.extend(children);
             }
         } else if let Ok(text) = std::fs::read(&path) {
-            let text = String::from_utf8_lossy(&text);
+            let mut text = String::from_utf8_lossy(&text).into_owned();
+            for (file, declaration) in &declarations {
+                if path.components().eq(file.components()) {
+                    text = text.replace(declaration, "");
+                }
+            }
             if needles.iter().any(|needle| text.contains(needle)) {
                 hits.push(path.display().to_string());
             }
