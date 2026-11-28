@@ -54,12 +54,44 @@ outcome. Every check must hold for the receipt to pass:
 `--board-run` is a Spellbench run directory on the board (manifest.json and config.json; for v2, Phase A's run).
 `--repo` is an mtg-kernel checkout holding both revisions; the board revision is the manifest's
 `engine.source_revision`.
+
+**Cube segments** (Cube M2 T12; collab M2-DESIGN section 5 T12). A Cube chain has no board run: its segment is
+dealt by the T11 dealer (`tools/cube_v1/deal.py`) from a pinned pool and constants, so the segment is compared with
+its pins and with the dealer's own replay instead of a board. `--cube-pins` selects this mode; the Pauper flags
+(`--board-run`, `--repo`, `--allow-london-training`, `--postboard-exception`) are refused in it, and without it
+nothing above changes.
+
+  runtime_parity.py --training-config SEGMENT.json [...] --cube-pins PINS.json --cube-pool POOL.json
+                    --cube-constants CONSTANTS.json --cube-base BASE.json [--out RECEIPT.json]
+
+The pins (`w5-cube-segment-pins/v1`) name the SHA-256 of the dealer, pool, constants and base, the pool's
+`kernel_carddb_hash` and recorded inputs (cube list, gaps, id export, fence), the segment (`namespace`, `run`,
+`update_start`, `update_end`) and the episode opt-ins every dealt episode carries (`deck_format: "limited40-v1"`,
+T1; `cube_flat_action_contract: true`, T4). Every check must hold:
+
+- **Identities:** the dealer, pool, constants and base hash to their pins, and the pool's own carddb hash and
+  input hashes equal the pinned ones.
+- **Decks:** every registered and selected deck holds exactly `deck_size` cards of the pinned pool (so no fenced
+  card), an empty sideboard, `selected` equals `registered`, no game is post-board, and the two decks of a game
+  share no nonbasic card.
+- **Episode opt-ins:** every episode carries exactly the pinned opt-ins.
+- **Run fields:** every segment config equals the base outside `iterations`, `output_directory` and
+  `initial_source`. The model source retains the base import hash and transfer settings; later segments may
+  supply a pinned checkpoint. Output paths and the model sources are recorded.
+- **Schedule:** the segment's iterations, in order across the configs, equal the dealer's replay of the pinned
+  segment from the supplied pool, constants and base, stamped with the opt-ins (`cube_segment_config`): episode ids,
+  seeds, seats, decks, limits and opponents. The first difference is recorded.
+
+The receipt (`w5-runtime-parity-cube/v1`) also records the pins verbatim. `runtime_receipt.py` binds a passing
+segment to the signed M3 Stage 1 identities.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -73,6 +105,13 @@ RAW_STRING = re.compile(r'[bc]?r(#*)"')
 OPENING_RULES = {"london-v1": "london"}  # a training `opening` protocol -> the board mulligan rule it plays
 MULLIGAN_CHECKS = ("mulligans_off_on_board", "mulligans_off_in_training")
 POSTBOARD_CHECK = "ordinary_starts_game_one"
+CUBE_SCHEMA = "w5-runtime-parity-cube/v1"
+CUBE_PINS_SCHEMA = "w5-cube-segment-pins/v1"
+CUBE_DEALER = Path(__file__).resolve().parents[1] / "cube_v1" / "deal.py"
+CUBE_SEGMENT_KEYS = ("namespace", "run", "update_start", "update_end")
+CUBE_OPT_INS = {"deck_format": "limited40-v1", "cube_flat_action_contract": True}  # T1 and T4, both required
+CUBE_PER_SEGMENT_KEYS = ("output_directory", "initial_source")  # set per segment by the chain; recorded
+POOL_INPUTS = ("cube_list", "gaps", "id_export", "fence")
 
 
 class ParityError(Exception):
@@ -409,11 +448,276 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# ---- Cube segments (T12) -------------------------------------------------------------------------------------
+
+CUBE_RUNTIME_FIELDS = (
+    "opening", "mulligan_modes", "runtime_rules", "priority_windows",
+    "max_physical_decisions", "max_policy_steps", "max_stack_objects",
+)
+STAMPED_EPISODE_KEYS = frozenset(CUBE_OPT_INS) | {"max_stack_objects", "priority_windows"}  # seat-independent fields the pins may stamp
+
+
+def load_dealer():
+    """The T11 dealer (`tools/cube_v1/deal.py`) of this checkout, imported by path."""
+    spec = importlib.util.spec_from_file_location("cube_v1_deal_for_parity", CUBE_DEALER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def is_sha256(value) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def check_cube_pins(pins) -> dict:
+    """The pins as `w5-cube-segment-pins/v1` declares them; refuses anything else."""
+    if not isinstance(pins, dict) or pins.get("schema") != CUBE_PINS_SCHEMA:
+        raise ParityError(f"the cube pins are not {CUBE_PINS_SCHEMA}")
+    for key in ("dealer", "pool", "constants", "base"):
+        if not isinstance(pins.get(key), dict) or not is_sha256(pins[key].get("sha256")):
+            raise ParityError(f"the cube pins lack a {key}.sha256")
+    pool = pins["pool"]
+    if not isinstance(pool.get("kernel_carddb_hash"), str) or not pool["kernel_carddb_hash"]:
+        raise ParityError("the cube pins lack pool.kernel_carddb_hash")
+    inputs = pool.get("input_sha256")
+    if not isinstance(inputs, dict) or set(inputs) != set(POOL_INPUTS) or not all(map(is_sha256, inputs.values())):
+        raise ParityError(f"the cube pins' pool.input_sha256 must hold exactly {list(POOL_INPUTS)}")
+    segment = pins.get("segment")
+    if not isinstance(segment, dict) or set(segment) != set(CUBE_SEGMENT_KEYS) \
+            or not all(isinstance(segment[k], str) and segment[k] for k in ("namespace", "run")) \
+            or not all(type(segment[k]) is int for k in ("update_start", "update_end")) \
+            or not 0 <= segment["update_start"] < segment["update_end"]:
+        raise ParityError(f"the cube pins' segment must hold {list(CUBE_SEGMENT_KEYS)} with 0 <= start < end")
+    episode = pins.get("episode")
+    if not isinstance(episode, dict) or not all(k in episode and same_json(episode[k], v) for k, v in CUBE_OPT_INS.items()):
+        raise ParityError(f"the cube pins' episode must declare {CUBE_OPT_INS}")
+    if set(episode) - STAMPED_EPISODE_KEYS:
+        raise ParityError(f"the cube pins' episode may stamp only {sorted(STAMPED_EPISODE_KEYS)}")
+    if "max_stack_objects" in episode:
+        cap = episode["max_stack_objects"]
+        if type(cap) is not int or not 1 <= cap <= 0xFFFFFFFF:
+            raise ParityError("max_stack_objects must be a positive u32")
+    return pins
+
+
+def cube_segment_config(dealer, pool_doc: dict, constants_doc: dict, base_doc: dict, pins: dict) -> dict:
+    """The segment the pins declare: the dealer's schedule for the pinned segment on the base, every episode
+    stamped with the pinned episode fields. The chain sets `output_directory` and `initial_source` afterwards."""
+    segment = pins["segment"]
+    config = dealer.build_schedule(pool_doc, constants_doc, segment["namespace"], segment["run"],
+                                   segment["update_start"], segment["update_end"], base_config=base_doc)
+    for item in config["iterations"]:
+        for entry in item["episodes"]:
+            entry["episode"].update(json.loads(json.dumps(pins["episode"])))
+    return config
+
+
+def cube_decks(configs: list[dict], pool_doc: dict, deck_size: int) -> dict:
+    """Deck identity of every training episode against the pinned pool and deck size."""
+    basics = {card["card_id"] for card in pool_doc["basics"]}
+    pool_ids = basics | {card["card_id"] for key in ("spells", "nonbasic_lands") for card in pool_doc[key]}
+    count, labels, violations = 0, set(), []
+    for config in configs:
+        for ep in episodes(config):
+            count += 1
+            problems = []
+            if ep.get("postboard") is not False:
+                problems.append("not a game one (postboard is not false)")
+            registered, selected = ep.get("registered"), ep.get("selected")
+            if not all(isinstance(side, list) and len(side) == 2 and all(map(typed_deck, side))
+                       for side in (registered, selected)):
+                violations.append({"episode": ep.get("id"), "problems": problems + ["malformed registration"]})
+                continue
+            if not same_json(registered, selected):
+                problems.append("selected differs from registered")
+            for seat, deck in enumerate(registered):
+                labels.add(deck["label"])
+                if len(deck["mainboard"]) != deck_size:
+                    problems.append(f"seat {seat} holds {len(deck['mainboard'])} cards, not {deck_size}")
+                if deck["sideboard"]:
+                    problems.append(f"seat {seat} has a sideboard")
+                outside = sorted(set(deck["mainboard"]) - pool_ids)
+                if outside:
+                    problems.append(f"seat {seat} holds cards outside the pinned pool: {outside[:5]}")
+                twice = sorted(i for i, n in Counter(deck["mainboard"]).items() if n > 1 and i not in basics)
+                if twice:
+                    problems.append(f"seat {seat} holds a nonbasic card twice: {twice[:5]}")
+            shared = sorted((set(registered[0]["mainboard"]) & set(registered[1]["mainboard"])) - basics)
+            if shared:
+                problems.append(f"nonbasic cards in both decks: {shared[:5]}")
+            if problems:
+                violations.append({"episode": ep.get("id"), "problems": problems})
+    return {"episodes": count, "deck_labels": len(labels), "violating_episodes": len(violations),
+            "violations": violations[:10]}
+
+
+def first_schedule_difference(actual: list, expected: list) -> dict | None:
+    """Where the segment's iterations first depart from the dealer's replay (None when equal)."""
+    if len(actual) != len(expected):
+        return {"iterations": len(actual), "expected_iterations": len(expected)}
+    for i, (got, want) in enumerate(zip(actual, expected)):
+        if same_json(got, want):
+            continue
+        got_eps = got.get("episodes") if isinstance(got, dict) else None
+        if not isinstance(got_eps, list) or len(got_eps) != len(want["episodes"]) or set(got) != set(want):
+            return {"iteration": i, "difference": "iteration shape"}
+        for slot, (got_ep, want_ep) in enumerate(zip(got_eps, want["episodes"])):
+            if same_json(got_ep, want_ep):
+                continue
+            fields = ["entry"] if not isinstance(got_ep, dict) else sorted(
+                k for k in set(got_ep) | set(want_ep) if k != "episode" and not same_json(got_ep.get(k), want_ep.get(k)))
+            got_inner = got_ep.get("episode") if isinstance(got_ep, dict) else None
+            if isinstance(got_inner, dict):
+                want_inner = want_ep["episode"]
+                fields += sorted(f"episode.{k}" for k in set(got_inner) | set(want_inner)
+                                 if k not in got_inner or k not in want_inner
+                                 or not same_json(got_inner[k], want_inner[k]))
+            return {"iteration": i, "slot": slot, "expected_id": want_ep["episode"]["id"], "fields": fields}
+    return None
+
+
+def initial_model_identity(source):
+    if not isinstance(source, dict) or not isinstance(source.get("play_import"), dict):
+        return None
+    play_import = source["play_import"]
+    if not is_sha256(play_import.get("sha256")):
+        return None
+    # A chain can stage the same import at a different path. Its identity
+    # and feature transfer stay fixed while the trainer advances checkpoints.
+    return {
+        **{k: v for k, v in source.items() if k not in ("checkpoint", "play_import")},
+        "play_import": {k: v for k, v in play_import.items() if k != "path"},
+    }
+
+
+def cube_segment_structure_matches(configs: list[dict], base: dict, start: int) -> bool:
+    expected = initial_model_identity(base.get("initial_source"))
+    if expected is None:
+        return False
+    locations = set()
+    for index, config in enumerate(configs):
+        iterations = config.get("iterations")
+        if not isinstance(iterations, list) or not 1 <= len(iterations) <= 4096:
+            return False
+        location = config.get("output_directory")
+        if not isinstance(location, str) or not location:
+            return False
+        canonical_location = os.path.normcase(os.path.abspath(location))
+        if canonical_location in locations:
+            return False
+        locations.add(canonical_location)
+        source = config.get("initial_source")
+        if not same_json(initial_model_identity(source), expected):
+            return False
+        checkpoint = source.get("checkpoint")
+        if index == 0 and start == 0:
+            if checkpoint is not None:
+                return False
+        elif not isinstance(checkpoint, dict) or not is_sha256(checkpoint.get("sha256")):
+            return False
+    return True
+
+
+def cube_runtime_profiles(configs: list[dict]) -> list[dict]:
+    profiles = {}
+    for config in configs:
+        for episode in episodes(config):
+            profile = {key: episode.get(key) for key in CUBE_RUNTIME_FIELDS}
+            profiles[json.dumps(profile, sort_keys=True)] = profile
+    return list(profiles.values())
+
+
+def run_fields(config: dict) -> dict:
+    return {k: v for k, v in config.items() if k != "iterations" and k not in CUBE_PER_SEGMENT_KEYS}
+
+
+def cube_compare(configs: list[dict], pins: dict, pool_doc: dict, constants_doc: dict, base_doc: dict,
+                 hashes: dict, dealer) -> dict:
+    """The cube segment checks (module docstring); `hashes` holds the SHA-256 of the dealer, pool, constants and
+    base bytes as supplied."""
+    try:
+        constants = dealer.validate_constants(constants_doc)
+        dealer.validate_pool(pool_doc)
+    except ValueError as exc:
+        raise ParityError(f"the dealer refuses the supplied pool or constants: {exc}") from exc
+    if not isinstance(base_doc, dict):
+        raise ParityError("the cube base must be a JSON object")
+    pool_pin = pins["pool"]
+    try:
+        expected = cube_segment_config(dealer, pool_doc, constants_doc, base_doc, pins)["iterations"]
+        difference = first_schedule_difference([item for c in configs for item in c["iterations"]], expected)
+    except ValueError as exc:
+        expected, difference = [], {"dealer_refused": str(exc)}
+    decks = cube_decks(configs, pool_doc, constants["deck_size"])
+    checks = {
+        "dealer_is_pinned": hashes["dealer"] == pins["dealer"]["sha256"],
+        "pool_is_pinned": hashes["pool"] == pool_pin["sha256"]
+        and pool_doc.get("kernel_carddb_hash") == pool_pin["kernel_carddb_hash"]
+        and same_json(pool_doc.get("input_sha256"), pool_pin["input_sha256"]),
+        "constants_are_pinned": hashes["constants"] == pins["constants"]["sha256"],
+        "base_is_pinned": hashes["base"] == pins["base"]["sha256"],
+        "decks_are_dealt_cube_decks": decks["violating_episodes"] == 0 and decks["episodes"] > 0,
+        "episodes_carry_the_pinned_opt_ins": all(all(k in ep and same_json(ep[k], v) for k, v in pins["episode"].items())
+                                                 for c in configs for ep in episodes(c)),
+        "run_fields_equal_the_base": all(same_json(run_fields(c), run_fields(base_doc)) for c in configs)
+        and cube_segment_structure_matches(configs, base_doc, pins["segment"]["update_start"]),
+        "schedule_equals_the_dealer": difference is None,
+    }
+    return {"checks": checks, "decks": decks,
+            "schedule": {"segment": pins["segment"], "iterations": len(expected),
+                         "episodes": sum(len(item["episodes"]) for item in expected),
+                         "first_difference": difference},
+            "per_segment_fields": [{k: c.get(k) for k in CUBE_PER_SEGMENT_KEYS} for c in configs],
+            "episode_runtime_profiles": cube_runtime_profiles(configs),
+            "pins": pins}
+
+
+def cube_main(args, parser) -> int:
+    pauper = [flag for flag, value in (("--board-run", args.board_run), ("--repo", args.repo),
+                                       ("--allow-london-training", args.allow_london_training),
+                                       ("--postboard-exception", args.postboard_exception)) if value is not None]
+    if args.training_revision != "HEAD":
+        pauper.append("--training-revision")
+    if pauper:
+        parser.error(f"{', '.join(pauper)} not allowed with --cube-pins")
+    missing = [flag for flag, value in (("--cube-pool", args.cube_pool), ("--cube-constants", args.cube_constants),
+                                        ("--cube-base", args.cube_base)) if value is None]
+    if missing:
+        parser.error(f"--cube-pins requires {', '.join(missing)}")
+    try:
+        raw_configs = [p.read_bytes() for p in args.training_config]
+        configs = [json.loads(raw) for raw in raw_configs]
+        raw = {name: path.read_bytes() for name, path in (("pins", args.cube_pins), ("pool", args.cube_pool),
+                                                          ("constants", args.cube_constants), ("base", args.cube_base),
+                                                          ("dealer", CUBE_DEALER))}
+        docs = {name: json.loads(data) for name, data in raw.items() if name != "dealer"}
+        pins = check_cube_pins(docs["pins"])
+        hashes = {name: sha256(data) for name, data in raw.items()}
+        result = cube_compare(configs, pins, docs["pool"], docs["constants"], docs["base"], hashes, load_dealer())
+    except (OSError, ParityError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+        print(f"error: {exc!r}", file=sys.stderr)
+        return 1
+    receipt = {"schema": CUBE_SCHEMA, "pass": all(result["checks"].values()), **result,
+               "inputs": {"training_configs": [{"path": str(p), "sha256": sha256(data)}
+                                               for p, data in zip(args.training_config, raw_configs)],
+                          "pins_sha256": hashes["pins"], "pool_sha256": hashes["pool"],
+                          "constants_sha256": hashes["constants"], "base_sha256": hashes["base"],
+                          "dealer_sha256": hashes["dealer"]}}
+    text = json.dumps(receipt, indent=2) + "\n"
+    if args.out:
+        args.out.write_text(text, encoding="utf-8", newline="\n")
+    print(text, end="")
+    return 0 if receipt["pass"] else 1
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    cube = any(arg == "--cube-pins" or arg.startswith("--cube-pins=") for arg in argv)
+    description = __doc__ if cube else __doc__.split("\n\n**Cube segments**", 1)[0]
+    parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--training-config", type=Path, action="append", required=True)
-    parser.add_argument("--board-run", type=Path, required=True)
-    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--board-run", type=Path, required=not cube)
+    parser.add_argument("--repo", type=Path, required=not cube)
     parser.add_argument("--training-revision", default="HEAD")
     parser.add_argument("--allow-london-training", metavar="REASON", default=None,
                         help="record a London-opening training set as an exception to the board's mulligan rule "
@@ -422,7 +726,16 @@ def main(argv=None) -> int:
                         help="record a training set with post-board games (the declared postboard_exposure) as an "
                              "exception to ordinary starts (non-empty reason, kept in the receipt)")
     parser.add_argument("--out", type=Path)
+    # The Cube flags stay out of the usage line, so every Pauper message keeps its bytes; the docstring documents them.
+    parser.add_argument("--cube-pins", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--cube-pool", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--cube-constants", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--cube-base", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.cube_pins is not None:
+        return cube_main(args, parser)
+    if any(value is not None for value in (args.cube_pool, args.cube_constants, args.cube_base)):
+        parser.error("--cube-pool, --cube-constants and --cube-base need --cube-pins")
     try:
         reason = check_reason(args.allow_london_training)
         postboard_reason = check_postboard_reason(args.postboard_exception)

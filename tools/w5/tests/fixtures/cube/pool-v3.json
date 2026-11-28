@@ -1,0 +1,4044 @@
+{
+  "schema": "cube_pool/v1",
+  "kernel_carddb_hash": "362918055ae24c1d",
+  "input_sha256": {
+    "cube_list": "e647de154da68a25caf5c97f022a9466311b2bf9d604143f35ceef9ac6aaf02d",
+    "gaps": "efad86376670270180b2ada893958b0065a57e8a0905565af1aae4e72a188cdd",
+    "id_export": "323a3b88e0c13040a32993d8de627d474d07a3db0fb8146536d9f89e93b66b12",
+    "fence": "8d02e845f1be12d636d4e6b3f1347b4d42f002e6c7ce67ce339114bcf6775e5c"
+  },
+  "fenced": [
+    {
+      "name": "Aang's Iceberg",
+      "reason": "InvalidEffectContinuation (top sources)"
+    },
+    {
+      "name": "Ajani, Nacatl Pariah",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    },
+    {
+      "name": "Bloodbraid Challenger",
+      "reason": "staged Escape"
+    },
+    {
+      "name": "Brain Freeze",
+      "reason": "stack overflow (issue 892)"
+    },
+    {
+      "name": "Etali, Primal Conqueror",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    },
+    {
+      "name": "Fable of the Mirror-Breaker",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    },
+    {
+      "name": "Nethergoyf",
+      "reason": "staged Escape"
+    },
+    {
+      "name": "Phlage, Titan of Fire's Fury",
+      "reason": "staged Escape"
+    },
+    {
+      "name": "Sage of the Skies",
+      "reason": "InvalidEffectContinuation (top sources)"
+    },
+    {
+      "name": "Sink into Stupor",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    },
+    {
+      "name": "Talon Gates of Madara",
+      "reason": "malformed stack target metadata"
+    },
+    {
+      "name": "Tamiyo, Inquisitive Student",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    },
+    {
+      "name": "Underworld Breach",
+      "reason": "staged Escape"
+    },
+    {
+      "name": "Uro, Titan of Nature's Wrath",
+      "reason": "staged Escape"
+    },
+    {
+      "name": "Witch Enchanter",
+      "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+    }
+  ],
+  "spells": [
+    {
+      "card_id": 8,
+      "name": "Brainstorm",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 13,
+      "name": "Chain Lightning",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 17,
+      "name": "Counterspell",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 18,
+      "name": "Cryogen Relic",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 24,
+      "name": "Duress",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 26,
+      "name": "Elvish Mystic",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 34,
+      "name": "Faithless Looting",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 37,
+      "name": "Fireblast",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 42,
+      "name": "Generous Ent",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 63,
+      "name": "Lava Dart",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 66,
+      "name": "Lightning Bolt",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 67,
+      "name": "Llanowar Elves",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 68,
+      "name": "Lorien Revealed",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 85,
+      "name": "Ponder",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 86,
+      "name": "Preordain",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 91,
+      "name": "Quirion Ranger",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 109,
+      "name": "Spell Pierce",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 116,
+      "name": "Thought Scour",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 127,
+      "name": "Voldaren Epicure",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 137,
+      "name": "Lotus Petal",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 143,
+      "name": "Troll of Khazad-dum",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 172,
+      "name": "Snuff Out",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 189,
+      "name": "Expedition Map",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 193,
+      "name": "Burst Lightning",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 198,
+      "name": "Consider",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 208,
+      "name": "Get Lost",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 210,
+      "name": "Sentinel of the Nameless City",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 213,
+      "name": "Deep-Cavern Bat",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 222,
+      "name": "Adeline, Resplendent Cathar",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 245,
+      "name": "Monastery Swiftspear",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 247,
+      "name": "Slickshot Show-Off",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 248,
+      "name": "Sanguine Evangelist",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 258,
+      "name": "Cori-Steel Cutter",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 261,
+      "name": "Overlord of the Mistmoors",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 264,
+      "name": "Enduring Innocence",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 334,
+      "name": "Stormchaser's Talent",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 337,
+      "name": "Liliana of the Veil",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 348,
+      "name": "Agatha's Soul Cauldron",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 356,
+      "name": "Sheoldred, the Apocalypse",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 357,
+      "name": "Dark Confidant",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 359,
+      "name": "Abrade",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 364,
+      "name": "Stock Up",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 367,
+      "name": "Cut Down",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 381,
+      "name": "Sheoldred's Edict",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 392,
+      "name": "Bloodtithe Harvester",
+      "colors": [
+        "B",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 407,
+      "name": "Tear Asunder",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 416,
+      "name": "Kaito, Bane of Nightmares",
+      "colors": [
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 425,
+      "name": "Brightglass Gearhulk",
+      "colors": [
+        "W",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 439,
+      "name": "Tishana's Tidebinder",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 449,
+      "name": "Baleful Strix",
+      "colors": [
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 458,
+      "name": "Lose Focus",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 472,
+      "name": "Thoughtseize",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 473,
+      "name": "Fatal Push",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 474,
+      "name": "Unholy Heat",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 475,
+      "name": "Daze",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 476,
+      "name": "Force of Will",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 478,
+      "name": "Brazen Borrower",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 479,
+      "name": "Mishra's Bauble",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 480,
+      "name": "Urza's Bauble",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 481,
+      "name": "Dragon's Rage Channeler",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 483,
+      "name": "Moonshadow",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 485,
+      "name": "Orcish Bowmasters",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 488,
+      "name": "Bilbo, Thief in the Night",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 490,
+      "name": "The One Ring",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 491,
+      "name": "Chrome Mox",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 497,
+      "name": "Dark Ritual",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 504,
+      "name": "Doomsday",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 505,
+      "name": "Thassa's Oracle",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 506,
+      "name": "Jace, Wielder of Mysteries",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 507,
+      "name": "Lion's Eye Diamond",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 508,
+      "name": "Show and Tell",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 509,
+      "name": "Sneak Attack",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 512,
+      "name": "Emrakul, the Aeons Torn",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 513,
+      "name": "Atraxa, Grand Unifier",
+      "colors": [
+        "W",
+        "U",
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 520,
+      "name": "Mox Emerald",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 521,
+      "name": "Mox Jet",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 522,
+      "name": "Mox Pearl",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 523,
+      "name": "Mox Ruby",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 524,
+      "name": "Mox Sapphire",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 525,
+      "name": "Black Lotus",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 526,
+      "name": "Sol Ring",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 527,
+      "name": "Mana Crypt",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 532,
+      "name": "Ancestral Recall",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 533,
+      "name": "Time Walk",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 535,
+      "name": "Tinker",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 536,
+      "name": "Paradoxical Outcome",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 537,
+      "name": "Coveted Jewel",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 539,
+      "name": "Manifold Key",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 545,
+      "name": "Mana Vault",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 550,
+      "name": "Tezzeret, Cruel Captain",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 552,
+      "name": "Phyrexian Metamorph",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 556,
+      "name": "Lurrus of the Dream-Den",
+      "colors": [
+        "W",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 557,
+      "name": "Demonic Tutor",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 559,
+      "name": "Force of Negation",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 560,
+      "name": "Gitaxian Probe",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 562,
+      "name": "Prismatic Ending",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 563,
+      "name": "Psychic Frog",
+      "colors": [
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 564,
+      "name": "Swords to Plowshares",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 565,
+      "name": "Treasure Cruise",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 567,
+      "name": "Aether Spellbomb",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 569,
+      "name": "Dismember",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 570,
+      "name": "Gush",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 571,
+      "name": "Flame of Anor",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 572,
+      "name": "Forth Eorlingas!",
+      "colors": [
+        "W",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 575,
+      "name": "Mox Opal",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 576,
+      "name": "Portable Hole",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 577,
+      "name": "Snapcaster Mage",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 578,
+      "name": "Soul-Guide Lantern",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 579,
+      "name": "Thundertrap Trainer",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 583,
+      "name": "Mana Drain",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 593,
+      "name": "Goblin Bombardment",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 597,
+      "name": "Galvanic Discharge",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 600,
+      "name": "Leyline Binding",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 602,
+      "name": "Phelia, Exuberant Shepherd",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 603,
+      "name": "Quantum Riddler",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 604,
+      "name": "Guide of Souls",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 605,
+      "name": "Ocelot Pride",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 610,
+      "name": "Voice of Victory",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 635,
+      "name": "Crop Rotation",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 656,
+      "name": "Sewer-veillance Cam",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 665,
+      "name": "Bolas's Citadel",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 669,
+      "name": "Flash",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 672,
+      "name": "Grim Monolith",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 675,
+      "name": "Mystic Forge",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 676,
+      "name": "Oath of Druids",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 677,
+      "name": "Oko, Thief of Crowns",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 680,
+      "name": "Sensei's Divining Top",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 682,
+      "name": "Suplex",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 684,
+      "name": "Tendrils of Agony",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 686,
+      "name": "The Fantasticar",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 688,
+      "name": "Ugin, Eye of the Storms",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 690,
+      "name": "Vampiric Tutor",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 692,
+      "name": "Yawgmoth's Will",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 708,
+      "name": "Eagles of the North",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 720,
+      "name": "Malevolent Rumble",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 721,
+      "name": "Mana Tithe",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 737,
+      "name": "Thraben Inspector",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 744,
+      "name": "Abhorrent Oculus",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 745,
+      "name": "Animate Dead",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 747,
+      "name": "Archon of Cruelty",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 752,
+      "name": "Chromatic Star",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 756,
+      "name": "Echo of Eons",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 757,
+      "name": "Emry, Lurker of the Loch",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 763,
+      "name": "Goblin Engineer",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 764,
+      "name": "Goblin Welder",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 766,
+      "name": "Griselbrand",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 767,
+      "name": "Icetill Explorer",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 768,
+      "name": "Kappa Cannoneer",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 769,
+      "name": "Legion Extruder",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 773,
+      "name": "Mox Diamond",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 775,
+      "name": "Phyrexian Dragon Engine",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 779,
+      "name": "Reanimate",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 782,
+      "name": "Shallow Grave",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 784,
+      "name": "Skateboard",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 798,
+      "name": "Avatar of Burgeoning Echoes",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 803,
+      "name": "Carnivorous Cultivator",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 809,
+      "name": "Dack Fayden",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 810,
+      "name": "Deathrite Shaman",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 815,
+      "name": "Grief",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 823,
+      "name": "Minsc & Boo, Timeless Heroes",
+      "colors": [
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 828,
+      "name": "Ragavan, Nimble Pilferer",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 835,
+      "name": "Subtlety",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 840,
+      "name": "Wrenn and Six",
+      "colors": [
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 867,
+      "name": "Manamorphose",
+      "colors": [
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 895,
+      "name": "Bitter Triumph",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 896,
+      "name": "Cabal Ritual",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 899,
+      "name": "Cloak and Dagger, Entwined",
+      "colors": [
+        "W",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 902,
+      "name": "Emperor of Bones",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 903,
+      "name": "Erode",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 905,
+      "name": "Flickerwisp",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 910,
+      "name": "Lion Sash",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 911,
+      "name": "Loran of the Third Path",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 914,
+      "name": "Once Upon a Time",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 915,
+      "name": "Overlord of the Balemurk",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 920,
+      "name": "Skyclave Apparition",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 922,
+      "name": "Solitude",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 924,
+      "name": "Stoneforge Mystic",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 926,
+      "name": "Sylvan Safekeeper",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 927,
+      "name": "Teferi, Time Raveler",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 931,
+      "name": "Wight of the Reliquary",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 932,
+      "name": "Wishclaw Talisman",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 940,
+      "name": "Barrowgoyf",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 944,
+      "name": "Boomerang Basics",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 948,
+      "name": "Dauthi Voidwalker",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 961,
+      "name": "Mystical Tutor",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 971,
+      "name": "Sowing Mycospawn",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 977,
+      "name": "Vraska's Final Mercy",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 985,
+      "name": "Broadside Bombardiers",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 991,
+      "name": "Elvish Reclaimer",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 992,
+      "name": "Endurance",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 995,
+      "name": "Fury",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 997,
+      "name": "Green Sun's Zenith",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 998,
+      "name": "Grindstone",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1000,
+      "name": "Inquisition of Kozilek",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1001,
+      "name": "Knight of the Reliquary",
+      "colors": [
+        "W",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1010,
+      "name": "Painter's Servant",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1018,
+      "name": "Super Shredder",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1034,
+      "name": "Frantic Search",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1037,
+      "name": "Mana Leak",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1041,
+      "name": "Parallax Wave",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1116,
+      "name": "Mother of Runes",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1123,
+      "name": "Firebolt",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1151,
+      "name": "Upheaval",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1159,
+      "name": "Birds of Paradise",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1181,
+      "name": "Unearth",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1187,
+      "name": "Exhume",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1188,
+      "name": "Life // Death",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1237,
+      "name": "Hullbreacher",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1255,
+      "name": "Haywire Mite",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1269,
+      "name": "Force of Vigor",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1270,
+      "name": "Containment Priest",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1293,
+      "name": "Toxic Deluge",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1294,
+      "name": "Pyrokinesis",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1300,
+      "name": "Engineered Explosives",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1322,
+      "name": "Zuran Orb",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1345,
+      "name": "Portal to Phyrexia",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1360,
+      "name": "Fiery Confluence",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1363,
+      "name": "Enlightened Tutor",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1372,
+      "name": "Damn",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1373,
+      "name": "Memory Lapse",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1374,
+      "name": "Miscalculation",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1375,
+      "name": "Mystic Confluence",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1376,
+      "name": "Occult Epiphany",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1377,
+      "name": "Oust",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1378,
+      "name": "Path to Exile",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1379,
+      "name": "Remand",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1380,
+      "name": "Reprieve",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1381,
+      "name": "Stern Scolding",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1382,
+      "name": "Time Spiral",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1383,
+      "name": "Timetwister",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1384,
+      "name": "Unexpectedly Absent",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1385,
+      "name": "Winds of Abandon",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1386,
+      "name": "Bloodchief's Thirst",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1387,
+      "name": "Bone Shards",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1388,
+      "name": "Chain of Smog",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1389,
+      "name": "Collective Brutality",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1390,
+      "name": "Damnation",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1391,
+      "name": "Entomb",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1392,
+      "name": "Hymn to Tourach",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1393,
+      "name": "Imperial Seal",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1394,
+      "name": "Infernal Grasp",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1395,
+      "name": "Mind Twist",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1396,
+      "name": "Mutagenic Growth",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1397,
+      "name": "Natural Order",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1398,
+      "name": "Night's Whisper",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1399,
+      "name": "Pest Infestation",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1400,
+      "name": "Tamiyo's Safekeeping",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1401,
+      "name": "Dead // Gone",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1402,
+      "name": "Delayed Blast Fireball",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1403,
+      "name": "Escape to the Wilds",
+      "colors": [
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1404,
+      "name": "Expressive Iteration",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1405,
+      "name": "Fire Covenant",
+      "colors": [
+        "B",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1406,
+      "name": "Flame Slash",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1407,
+      "name": "Flashback",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1408,
+      "name": "Impractical Joke",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1409,
+      "name": "Kolaghan's Command",
+      "colors": [
+        "B",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1410,
+      "name": "Lingering Souls",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1411,
+      "name": "Mine Collapse",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1412,
+      "name": "No More Lies",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1413,
+      "name": "Pillage the Bog",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1414,
+      "name": "Sear",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1415,
+      "name": "Tarfire",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1416,
+      "name": "Traumatic Critique",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1417,
+      "name": "Vicious Rivalry",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1418,
+      "name": "Wheel of Fortune",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1421,
+      "name": "Cathar Commando",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1453,
+      "name": "Talisman of Creativity",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1454,
+      "name": "Talisman of Curiosity",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1455,
+      "name": "Talisman of Dominance",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1456,
+      "name": "Talisman of Progress",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1457,
+      "name": "Mind Stone",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1458,
+      "name": "Basalt Monolith",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1459,
+      "name": "Candelabra of Tawnos",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1460,
+      "name": "Coalition Relic",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1461,
+      "name": "Fastbond",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1462,
+      "name": "Everflowing Chalice",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1463,
+      "name": "Pentad Prism",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1464,
+      "name": "Auriok Salvagers",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1466,
+      "name": "Death-Greeter's Champion",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1467,
+      "name": "Embereth Shieldbreaker",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1468,
+      "name": "Formidable Speaker",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1469,
+      "name": "Iron-Shield Elf",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1470,
+      "name": "Luminarch Aspirant",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1471,
+      "name": "Giver of Runes",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1472,
+      "name": "Harvester of Misery",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1473,
+      "name": "Devoted Druid",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1474,
+      "name": "Oliphaunt",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1475,
+      "name": "Stingcaster Mage",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1476,
+      "name": "Third Path Iconoclast",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1477,
+      "name": "Tireless Tracker",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1478,
+      "name": "Samut, Hazoret's Champion",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1479,
+      "name": "Marwyn, the Preserver",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1480,
+      "name": "Spellseeker",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1481,
+      "name": "Walking Ballista",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1482,
+      "name": "Noble Hierarch",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1483,
+      "name": "Spider-Woman, Stunning Savior",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1484,
+      "name": "Ignoble Hierarch",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1485,
+      "name": "Lightning Greaves",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1486,
+      "name": "Pyrite Spellbomb",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1487,
+      "name": "Shorikai, Genesis Engine",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1488,
+      "name": "The Echoverse Fulcrum",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1489,
+      "name": "Retrofitter Foundry",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1490,
+      "name": "Thopter Foundry",
+      "colors": [
+        "W",
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1491,
+      "name": "Relic of Sauron",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1492,
+      "name": "Currency Converter",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1493,
+      "name": "Staff of the Storyteller",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1494,
+      "name": "The Mightstone and Weakstone",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1501,
+      "name": "Displacer Kitten",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1502,
+      "name": "Faerie Mastermind",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1503,
+      "name": "Ledger Shredder",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1504,
+      "name": "Forensic Gadgeteer",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1505,
+      "name": "Lutri, the Spellchaser",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1506,
+      "name": "Caustic Bronco",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1507,
+      "name": "Jacked Rabbit",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1508,
+      "name": "Bristly Bill, Spine Sower",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1509,
+      "name": "Sedgemoor Witch",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1510,
+      "name": "Witherbloom Apprentice",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1511,
+      "name": "Omnath, Locus of Creation",
+      "colors": [
+        "W",
+        "U",
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1512,
+      "name": "Scythecat Cub",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1513,
+      "name": "Pompous Battlemage",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1515,
+      "name": "Okoye, Mighty and Adored",
+      "colors": [
+        "W",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1516,
+      "name": "Ouroboroid",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1517,
+      "name": "Screaming Nemesis",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1518,
+      "name": "Skullclamp",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1519,
+      "name": "Sword of the Meek",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1520,
+      "name": "Umezawa's Jitte",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1521,
+      "name": "Nettlecyst",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1522,
+      "name": "Kaldra Compleat",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1523,
+      "name": "Glimmer Lens",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1524,
+      "name": "Iron Man Armor",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1525,
+      "name": "Astrologian's Planisphere",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1526,
+      "name": "Smuggler's Copter",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1527,
+      "name": "Esika's Chariot",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1541,
+      "name": "Delighted Halfling",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1542,
+      "name": "Fanatic of Rhonas",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1543,
+      "name": "Carnage Interpreter",
+      "colors": [
+        "B",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1544,
+      "name": "Keen-Eyed Curator",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1545,
+      "name": "Baloth Prime",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1546,
+      "name": "Alpha Deathclaw",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1547,
+      "name": "Ginger, Queen of Sweets",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1548,
+      "name": "Myr Battlesphere",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1549,
+      "name": "Otharri, Suns' Glory",
+      "colors": [
+        "W",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1550,
+      "name": "Mole Man, Moloid Master",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1551,
+      "name": "Titania, Protector of Argoth",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1552,
+      "name": "Torsten, Founder of Benalia",
+      "colors": [
+        "W",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1553,
+      "name": "Worldspine Wurm",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1554,
+      "name": "Corpse Dance",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1555,
+      "name": "Necromancy",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1556,
+      "name": "Recurring Nightmare",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1559,
+      "name": "Sunfall",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1560,
+      "name": "Balance",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1561,
+      "name": "Council's Judgment",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1562,
+      "name": "Memory Jar",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1563,
+      "name": "Palantir of Orthanc",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1564,
+      "name": "Proft's Eidetic Memory",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1565,
+      "name": "Fractured Identity",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1573,
+      "name": "Ivora, Insatiable Heir",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1574,
+      "name": "Gau, Feral Youth",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1575,
+      "name": "Laelia, the Blade Reforged",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1576,
+      "name": "Headliner Scarlett",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1577,
+      "name": "Gandalf, Goblins' Bane",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1578,
+      "name": "Fallen Shinobi",
+      "colors": [
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1579,
+      "name": "Generous Plunderer",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1580,
+      "name": "Gut, True Soul Zealot",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1581,
+      "name": "Seasoned Cryomancer",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1582,
+      "name": "Seasoned Pyromancer",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1583,
+      "name": "Sphinx of False Conclusions",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1584,
+      "name": "Metamorphosis Fanatic",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1585,
+      "name": "Night Nurse, Healer of Heroes",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1586,
+      "name": "Six",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1587,
+      "name": "Ursine Monstrosity",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1588,
+      "name": "Jace, the Mind Sculptor",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1589,
+      "name": "Karn, Scion of Urza",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1590,
+      "name": "Narset, Parter of Veils",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1591,
+      "name": "Teferi, Hero of Dominaria",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1592,
+      "name": "The Wandering Emperor",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1593,
+      "name": "Garruk, Curse Breaker",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1621,
+      "name": "Inti, Seneschal of the Sun",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1622,
+      "name": "Malcolm, Alluring Scoundrel",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1623,
+      "name": "Chandra, Torch of Defiance",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1624,
+      "name": "Orcish Lumberjack",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1625,
+      "name": "Urza, Lord High Artificer",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1626,
+      "name": "Vivi Ornitier",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1627,
+      "name": "Black Widow, Super Spy",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1628,
+      "name": "Soul-Scar Mage",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1629,
+      "name": "Questing Beast",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1630,
+      "name": "Palace Jailer",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1631,
+      "name": "Vibrance",
+      "colors": [
+        "R",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1632,
+      "name": "Wistfulness",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1633,
+      "name": "Tidehollow Sculler",
+      "colors": [
+        "W",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1634,
+      "name": "The Wondrous Wasp",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1635,
+      "name": "Woodfall Primus",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1636,
+      "name": "Sanctum Lurker",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1637,
+      "name": "Guardian Scalelord",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1638,
+      "name": "Bonecrusher Giant",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1639,
+      "name": "Concealing Curtains",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1640,
+      "name": "Jace, Vryn's Prodigy",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1641,
+      "name": "Jennifer Walters",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1642,
+      "name": "Emeritus of Abundance",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1643,
+      "name": "Emeritus of Ideation",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1644,
+      "name": "Phantasmal Image",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1645,
+      "name": "Superior Spider-Man",
+      "colors": [
+        "U",
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1646,
+      "name": "Vaultborn Tyrant",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1647,
+      "name": "Saheeli, Sublime Artificer",
+      "colors": [
+        "U",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1648,
+      "name": "Springheart Nantuko",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1649,
+      "name": "Detective's Phoenix",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1650,
+      "name": "Pyrogoyf",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1651,
+      "name": "Elite Spellbinder",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1652,
+      "name": "Wan Shi Tong, All-Knowing",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1653,
+      "name": "Wan Shi Tong, Librarian",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1654,
+      "name": "Thieving Skydiver",
+      "colors": [
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1655,
+      "name": "Zirda, the Dawnwaker",
+      "colors": [
+        "W",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1656,
+      "name": "Absorbing Man",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1660,
+      "name": "Aang, Swift Savior",
+      "colors": [
+        "W",
+        "U"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1661,
+      "name": "Badgermole Cub",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1662,
+      "name": "Batroc the Leaper",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1663,
+      "name": "Blightsteel Colossus",
+      "colors": [],
+      "is_land": false
+    },
+    {
+      "card_id": 1664,
+      "name": "Crabomination",
+      "colors": [
+        "B"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1665,
+      "name": "Fear of Missing Out",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1666,
+      "name": "Figure of Destiny",
+      "colors": [
+        "W",
+        "R"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1667,
+      "name": "Figure of Fable",
+      "colors": [
+        "W",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1668,
+      "name": "Hexdrinker",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1669,
+      "name": "Nadu, Winged Wisdom",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1670,
+      "name": "Serra Paragon",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1671,
+      "name": "Swift Reconfiguration",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1672,
+      "name": "Elspeth, Storm Slayer",
+      "colors": [
+        "W"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1673,
+      "name": "Grist, the Hunger Tide",
+      "colors": [
+        "B",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1674,
+      "name": "Nissa, Who Shakes the World",
+      "colors": [
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1675,
+      "name": "Tamiyo, Collector of Tales",
+      "colors": [
+        "U",
+        "G"
+      ],
+      "is_land": false
+    },
+    {
+      "card_id": 1676,
+      "name": "Through the Breach",
+      "colors": [
+        "R"
+      ],
+      "is_land": false
+    }
+  ],
+  "nonbasic_lands": [
+    {
+      "card_id": 284,
+      "name": "Blackcleave Cliffs",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 285,
+      "name": "Blooming Marsh",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 286,
+      "name": "Concealed Courtyard",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 287,
+      "name": "Copperline Gorge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 288,
+      "name": "Darkslick Shores",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 289,
+      "name": "Inspiring Vantage",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 290,
+      "name": "Razorverge Thicket",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 291,
+      "name": "Seachrome Coast",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 292,
+      "name": "Spirebluff Canal",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 301,
+      "name": "Riverpyre Verge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 302,
+      "name": "Thornspire Verge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 303,
+      "name": "Wastewood Verge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 304,
+      "name": "Elegant Parlor",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 305,
+      "name": "Lush Portico",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 306,
+      "name": "Underground Mortuary",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 307,
+      "name": "Jetmir's Garden",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 308,
+      "name": "Spara's Headquarters",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 309,
+      "name": "Ziatora's Proving Ground",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 310,
+      "name": "Starting Town",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 373,
+      "name": "Otawara, Soaring City",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 402,
+      "name": "Boseiju, Who Endures",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 461,
+      "name": "Underground Sea",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 462,
+      "name": "Volcanic Island",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 463,
+      "name": "Undercity Sewers",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 464,
+      "name": "Thundering Falls",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 465,
+      "name": "Bloodstained Mire",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 466,
+      "name": "Flooded Strand",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 467,
+      "name": "Marsh Flats",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 468,
+      "name": "Misty Rainforest",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 469,
+      "name": "Polluted Delta",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 470,
+      "name": "Scalding Tarn",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 471,
+      "name": "Wasteland",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 489,
+      "name": "Ancient Tomb",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 495,
+      "name": "Tropical Island",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 496,
+      "name": "Hedge Maze",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 498,
+      "name": "City of Traitors",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 529,
+      "name": "Strip Mine",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 530,
+      "name": "Karakas",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 531,
+      "name": "Tolarian Academy",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 538,
+      "name": "Mishra's Workshop",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 551,
+      "name": "Urza's Saga",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 566,
+      "name": "Tundra",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 574,
+      "name": "Meticulous Archive",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 587,
+      "name": "Plateau",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 588,
+      "name": "Savannah",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 589,
+      "name": "Scrubland",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 591,
+      "name": "Arid Mesa",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 592,
+      "name": "Windswept Heath",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 746,
+      "name": "Arena of Glory",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 748,
+      "name": "Badlands",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 754,
+      "name": "Dark Depths",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 778,
+      "name": "Raucous Theater",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 781,
+      "name": "Shadowy Backstreet",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 787,
+      "name": "Taiga",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 789,
+      "name": "Thespian's Stage",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 791,
+      "name": "Verdant Catacombs",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 792,
+      "name": "Wooded Foothills",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 793,
+      "name": "Yavimaya, Cradle of Growth",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 800,
+      "name": "Bayou",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 917,
+      "name": "Prismatic Vista",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 999,
+      "name": "Horizon Canopy",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1162,
+      "name": "Gaea's Cradle",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1246,
+      "name": "Urborg, Tomb of Yawgmoth",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1422,
+      "name": "Blood Crypt",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1423,
+      "name": "Breeding Pool",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1424,
+      "name": "Godless Shrine",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1425,
+      "name": "Hallowed Fountain",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1426,
+      "name": "Overgrown Tomb",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1427,
+      "name": "Sacred Foundry",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1428,
+      "name": "Steam Vents",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1429,
+      "name": "Stomping Ground",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1430,
+      "name": "Temple Garden",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1431,
+      "name": "Watery Grave",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1432,
+      "name": "Multiversal Passage",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1433,
+      "name": "Indatha Triome",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1434,
+      "name": "Ketria Triome",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1435,
+      "name": "Raugrin Triome",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1436,
+      "name": "Savai Triome",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1437,
+      "name": "Zagoth Triome",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1438,
+      "name": "Raffine's Tower",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1439,
+      "name": "Xander's Lounge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1440,
+      "name": "Blazemire Verge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1441,
+      "name": "Bleachbone Verge",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1442,
+      "name": "Botanical Sanctum",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1443,
+      "name": "Commercial District",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1444,
+      "name": "Sunbaked Canyon",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1445,
+      "name": "Waterlogged Grove",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1446,
+      "name": "Mana Confluence",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1447,
+      "name": "Library of Alexandria",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1448,
+      "name": "Celestial Colonnade",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1449,
+      "name": "Creeping Tar Pit",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1450,
+      "name": "Fabled Passage",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1451,
+      "name": "Abandoned Air Temple",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1452,
+      "name": "Shelldock Isle",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 1558,
+      "name": "Shifting Woodland",
+      "colors": [],
+      "is_land": true
+    }
+  ],
+  "basics": [
+    {
+      "card_id": 39,
+      "name": "Forest",
+      "color": "G",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 60,
+      "name": "Island",
+      "color": "U",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 76,
+      "name": "Mountain",
+      "color": "R",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 114,
+      "name": "Swamp",
+      "color": "B",
+      "colors": [],
+      "is_land": true
+    },
+    {
+      "card_id": 192,
+      "name": "Plains",
+      "color": "W",
+      "colors": [],
+      "is_land": true
+    }
+  ]
+}
