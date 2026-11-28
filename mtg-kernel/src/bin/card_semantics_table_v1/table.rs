@@ -16,8 +16,18 @@ pub const CUBE_POOL_PATH: &str = "data/cube_v1/mtgo_vintage_cube_20261007.json";
 pub const MAPPING_PATH: &str = "data/card_semantics_v1/leaf_mapping_v1.json";
 pub const TABLE_PATH: &str = "data/card_semantics_v1/pauper_table_v1.json";
 pub const DUMP_PATH: &str = "data/card_semantics_v1/pauper_table_v1.txt";
-pub const CUBE_TABLE_PATH: &str = "data/card_semantics_v1/cube_table_v1.json";
-pub const CUBE_DUMP_PATH: &str = "data/card_semantics_v1/cube_table_v1.txt";
+/// The full cube table (M2 T8): every cube list card with an executable
+/// definition plus the five basics, with the fetch family. Regenerated and
+/// checked by `--cube`.
+pub const CUBE_TABLE_PATH: &str = "data/card_semantics_v1/cube_table_v1_full.json";
+pub const CUBE_DUMP_PATH: &str = "data/card_semantics_v1/cube_table_v1_full.txt";
+/// The provisional cube table M4 D0 to D8 pin (SHA-256
+/// [`CUBE_PROVISIONAL_TABLE_SHA256`]) until D15 re-pins them on the full
+/// table. The generator no longer writes it; it seeds the full table's
+/// column order, so column `i < 978` means the same token in both.
+pub const CUBE_PROVISIONAL_TABLE_PATH: &str = "data/card_semantics_v1/cube_table_v1.json";
+pub const CUBE_PROVISIONAL_TABLE_SHA256: &str =
+    "778c12a127071fdc2170730e4f0e932d296f47b6ac2805b3eee331e00f5c46c0";
 pub const BASIC_LANDS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
 const CONTENT_HASH_KEY: &str = "\"content_sha256\": ";
 
@@ -168,6 +178,63 @@ pub fn rows(names: &[String], mapping: Option<&Mapping>) -> Vec<CardRow> {
         .collect()
 }
 
+/// Prefix of the cube table's fetch family: `fetch:subtype=Plains` to
+/// `fetch:subtype=Forest`, one count column per basic land type.
+#[cfg(feature = "eternal-fixtures")]
+pub const FETCH_PREFIX: &str = "fetch:subtype=";
+
+/// Token families only the cube table carries, listed after [`FAMILIES`] in
+/// the cube dump. The Pauper dump never lists them.
+pub const CUBE_FAMILIES: [(&str, &str); 1] = [(
+    "fetch:",
+    "basic land type a land's battlefield library search can find (cube_draft_v1::land_fetch_bits), count 1 per type; cube table only",
+)];
+
+/// A cube row's tokens: the shared typed walk plus the cube-only fetch
+/// family. The Pauper table never calls this, so its bytes are unchanged.
+fn cube_card_tokens(id: u16, mapping: Option<&Mapping>) -> CardTokens {
+    let mut tokens = card_tokens(id, mapping);
+    add_fetch_family(&mut tokens, id);
+    tokens
+}
+
+/// Adds `fetch:subtype=<basic>` (count 1) for every basic land type the
+/// land's battlefield library searches can find, read from the engine's
+/// typed search filters ([`mtg_kernel::cube_draft_v1::land_fetch_bits`]),
+/// never from card names. Only lands carry the family.
+#[cfg(feature = "eternal-fixtures")]
+fn add_fetch_family(tokens: &mut CardTokens, id: u16) {
+    use super::extract::Acc;
+    use mtg_kernel::card_def::CardType;
+    if !CARD_DEFS[usize::from(id)].types.contains(&CardType::Land) {
+        return;
+    }
+    let bits = mtg_kernel::cube_draft_v1::land_fetch_bits(id);
+    for (k, basic) in BASIC_LANDS.iter().enumerate() {
+        if bits & (1 << k) != 0 {
+            let previous = tokens.tokens.insert(
+                format!("{FETCH_PREFIX}{basic}"),
+                Acc {
+                    kind: TokenKind::Count,
+                    count: 1,
+                    value: 0,
+                    via_mapping: false,
+                    direct: true,
+                },
+            );
+            assert!(
+                previous.is_none(),
+                "the typed walk never emits fetch tokens"
+            );
+        }
+    }
+}
+
+/// The default build has no cube engine helpers and never builds the cube
+/// table (`--cube` is refused before any row is read).
+#[cfg(not(feature = "eternal-fixtures"))]
+fn add_fetch_family(_tokens: &mut CardTokens, _id: u16) {}
+
 /// Resolves cube list cards that have an executable definition (`Full` or
 /// `Partial`), appends the five basic lands, and lists missing/no-effect
 /// cube cards separately.
@@ -184,12 +251,12 @@ pub fn select_cube_rows(cube_names: &[String], mapping: &Mapping) -> Result<Cube
                 rows.push(CardRow {
                     name: name.clone(),
                     id,
-                    tokens: card_tokens(id, Some(mapping)),
+                    tokens: cube_card_tokens(id, Some(mapping)),
                 });
                 before_mapping.push(CardRow {
                     name: name.clone(),
                     id,
-                    tokens: card_tokens(id, None),
+                    tokens: cube_card_tokens(id, None),
                 });
             }
             _ => not_implemented.push(name.clone()),
@@ -210,12 +277,12 @@ pub fn select_cube_rows(cube_names: &[String], mapping: &Mapping) -> Result<Cube
         rows.push(CardRow {
             name: land.to_string(),
             id,
-            tokens: card_tokens(id, Some(mapping)),
+            tokens: cube_card_tokens(id, Some(mapping)),
         });
         before_mapping.push(CardRow {
             name: land.to_string(),
             id,
-            tokens: card_tokens(id, None),
+            tokens: cube_card_tokens(id, None),
         });
     }
 
@@ -465,15 +532,20 @@ pub fn format_amount(acc: &super::extract::Acc) -> String {
 
 /// The human-readable dump committed beside the Pauper table.
 pub fn render_dump(table: &Table, census_text: &str) -> String {
-    render_dump_with_title(table, "Pauper pool", census_text)
+    render_dump_with_title(table, "Pauper pool", census_text, &[])
 }
 
 /// The human-readable dump committed beside the Vintage Cube table.
 pub fn render_cube_dump(table: &Table, census_text: &str) -> String {
-    render_dump_with_title(table, "Vintage Cube pool", census_text)
+    render_dump_with_title(table, "Vintage Cube pool", census_text, &CUBE_FAMILIES)
 }
 
-fn render_dump_with_title(table: &Table, pool_title: &str, census_text: &str) -> String {
+fn render_dump_with_title(
+    table: &Table,
+    pool_title: &str,
+    census_text: &str,
+    extra_families: &[(&str, &str)],
+) -> String {
     let mut out = String::new();
     writeln!(
         out,
@@ -536,6 +608,9 @@ fn render_dump_with_title(table: &Table, pool_title: &str, census_text: &str) ->
     writeln!(out).unwrap();
     writeln!(out, "== Token families").unwrap();
     for (prefix, meaning) in FAMILIES.iter().filter(|(p, _)| !p.is_empty()) {
+        writeln!(out, "{prefix:12} {meaning}").unwrap();
+    }
+    for (prefix, meaning) in extra_families {
         writeln!(out, "{prefix:12} {meaning}").unwrap();
     }
     out

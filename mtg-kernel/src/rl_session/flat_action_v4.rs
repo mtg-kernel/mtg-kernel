@@ -1261,7 +1261,13 @@ impl FastActorSessionV1 {
         expected: FastActorDecisionV1,
     ) -> Result<crate::policy_observation_v6::ObservationV6, FlatActionDecisionSliceErrorV1> {
         let mut observation = self.flat_policy_observation_raw_v4(expected)?;
-        attack_count_v1::omit_unread_attack_count_v1(&mut observation)?;
+        // FlatV9 (`flat_policy_v6.rs`): only inside its relaxed scope, which
+        // clears the attack count itself.
+        if crate::flat_policy_v6::relaxed_v1() {
+            crate::flat_policy_v6::sanitize_observation_v1(&mut observation);
+        } else {
+            attack_count_v1::omit_unread_attack_count_v1(&mut observation)?;
+        }
         Ok(observation)
     }
 
