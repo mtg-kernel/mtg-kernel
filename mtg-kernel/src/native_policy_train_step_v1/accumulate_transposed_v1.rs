@@ -199,9 +199,13 @@ impl<'t> ReverseGradientSinkV1<'t> for AccumulateTransposedV1<'_> {
         &mut self,
         object_card_ids: &'t [usize],
         d_object_input: &[f32],
+        object_feature_dim: usize,
     ) {
-        AccumulateGradientsV1(&mut self.gradients.gradients)
-            .card_embedding_dims_v1::<D>(object_card_ids, d_object_input);
+        AccumulateGradientsV1(&mut self.gradients.gradients).card_embedding_dims_v1::<D>(
+            object_card_ids,
+            d_object_input,
+            object_feature_dim,
+        );
     }
 }
 

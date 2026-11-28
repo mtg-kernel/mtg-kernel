@@ -35,6 +35,10 @@ use crate::native_policy_value_net_v1::v8_inclusion_v1::{
     V8_MODEL_ARCHITECTURE_VERSION_V1, V8_PAIRING_PARAMETER_NAMES_V1,
     V8_PAIRING_PARAMETER_SHAPES_V1, V8_PARAMETER_COUNT_V1,
 };
+use crate::native_policy_value_net_v1::v9_cube_v1::{
+    V9_MODEL_ARCHITECTURE_VERSION_V1, V9_OBJECT_ENCODER_INPUT_V1, V9_PARAMETER_COUNT_V1,
+    V9_STATE_ENCODER_INPUT_V1,
+};
 use crate::native_policy_value_net_v1::{
     accumulate_input_major_row_v1,
     accumulate_input_major_rows_v1,
@@ -829,12 +833,58 @@ const PAIRING_FIRST_BIAS_V1: usize = PARAMETER_TENSOR_COUNT + 1;
 const PAIRING_SECOND_WEIGHT_V1: usize = PARAMETER_TENSOR_COUNT + 2;
 const PAIRING_SECOND_BIAS_V1: usize = PARAMETER_TENSOR_COUNT + 3;
 const V8_ACTION_FIRST_WEIGHT_SHAPE_V1: &[usize] = &[HIDDEN_DIM_V1, V8_ACTION_ENCODER_INPUT_V1];
+const V9_OBJECT_FIRST_WEIGHT_SHAPE_V1: &[usize] = &[HIDDEN_DIM_V1, V9_OBJECT_ENCODER_INPUT_V1];
+const V9_STATE_FIRST_WEIGHT_SHAPE_V1: &[usize] = &[HIDDEN_DIM_V1, V9_STATE_ENCODER_INPUT_V1];
+
+/// Which net of the net-8 family a manifest is: net-8, the V8 inclusion net
+/// (`v8_inclusion_v1`), or the FlatV9 net on it (`v9_cube_v1`), which also
+/// widens `object_encoder.0` and `state_encoder.0`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NetVariantV1 {
+    Net8,
+    V8Inclusion,
+    V9Cube,
+}
+
+impl NetVariantV1 {
+    pub(crate) fn of_architecture_v1(architecture: &str) -> Self {
+        if architecture == V9_MODEL_ARCHITECTURE_VERSION_V1 {
+            Self::V9Cube
+        } else if architecture == V8_MODEL_ARCHITECTURE_VERSION_V1 {
+            Self::V8Inclusion
+        } else {
+            Self::Net8
+        }
+    }
+
+    /// The variant of a manifest by its tensors: the V8 count, then the
+    /// FlatV9 object first-layer shape.
+    fn of_manifest_v1(parameters: &[impl NamedTensorV1]) -> Self {
+        if parameters.len() != V8_PARAMETER_TENSOR_COUNT_V1 {
+            Self::Net8
+        } else if parameters[OBJECT_FIRST_WEIGHT].tensor_shape_v1()
+            == V9_OBJECT_FIRST_WEIGHT_SHAPE_V1
+        {
+            Self::V9Cube
+        } else {
+            Self::V8Inclusion
+        }
+    }
+
+    /// Whether the net has the V8 inputs (include column, pairing path).
+    pub(crate) fn has_v8_inputs_v1(self) -> bool {
+        self != Self::Net8
+    }
+}
 
 /// The expected `(name, shape)` of every tensor of an architecture: `D`'s
 /// table, or under `D = Net8DimsV1` with `v8` the V8 inclusion net's (net-8's
 /// table with `action_encoder.0.weight` one column wider, then the pairing
 /// path).
-fn parameter_layout_dims_v1<D: NetDimsV1>(v8: bool) -> Vec<(&'static str, &'static [usize])> {
+fn parameter_layout_dims_v1<D: NetDimsV1>(
+    variant: NetVariantV1,
+) -> Vec<(&'static str, &'static [usize])> {
+    let v8 = variant.has_v8_inputs_v1();
     let mut layout: Vec<(&'static str, &'static [usize])> = EXPECTED_PARAMETER_NAMES
         .iter()
         .copied()
@@ -848,13 +898,19 @@ fn parameter_layout_dims_v1<D: NetDimsV1>(v8: bool) -> Vec<(&'static str, &'stat
                 .copied()
                 .zip(V8_PAIRING_PARAMETER_SHAPES_V1),
         );
+        if variant == NetVariantV1::V9Cube {
+            layout[OBJECT_FIRST_WEIGHT].1 = V9_OBJECT_FIRST_WEIGHT_SHAPE_V1;
+            layout[STATE_FIRST_WEIGHT].1 = V9_STATE_FIRST_WEIGHT_SHAPE_V1;
+        }
     }
     layout
 }
 
 /// The parameter count of [`parameter_layout_dims_v1`]'s architecture.
-fn parameter_count_dims_v1<D: NetDimsV1>(v8: bool) -> usize {
-    if v8 && is_net8_dims_v1::<D>() {
+fn parameter_count_dims_v1<D: NetDimsV1>(variant: NetVariantV1) -> usize {
+    if variant == NetVariantV1::V9Cube && is_net8_dims_v1::<D>() {
+        V9_PARAMETER_COUNT_V1
+    } else if variant.has_v8_inputs_v1() && is_net8_dims_v1::<D>() {
         V8_PARAMETER_COUNT_V1
     } else {
         D::PARAMETER_COUNT
@@ -867,6 +923,24 @@ fn action_spec_v1<D: NetDimsV1>(action_feature_dim: usize) -> TwoLayerSpecV1 {
     TwoLayerSpecV1 {
         input_dim: action_feature_dim + D::HIDDEN,
         ..D::ACTION_SPEC
+    }
+}
+
+/// The two-layer spec of `object_encoder` for an object width (net-8's, or
+/// the FlatV9 net's).
+fn object_spec_v1<D: NetDimsV1>(object_feature_dim: usize) -> TwoLayerSpecV1 {
+    TwoLayerSpecV1 {
+        input_dim: object_feature_dim + D::CARD_EMBEDDING,
+        ..D::OBJECT_SPEC
+    }
+}
+
+/// The two-layer spec of `state_encoder` for a state width (net-8's, or the
+/// FlatV9 net's).
+fn state_spec_v1<D: NetDimsV1>(state_dim: usize) -> TwoLayerSpecV1 {
+    TwoLayerSpecV1 {
+        input_dim: state_dim + D::HIDDEN * OBJECT_GROUP_COUNT_V1,
+        ..D::STATE_SPEC
     }
 }
 
@@ -2224,9 +2298,9 @@ impl<D: NetDimsV1> NativePolicyValueTrainStateDimsV1<D> {
         let mut parameter_tensor_count = 0usize;
         let mut parameter_element_count = 0usize;
         let mut scorer_bias_anchor_bits = None;
-        let v8 =
-            self.model.config_v1().model_architecture_version == V8_MODEL_ARCHITECTURE_VERSION_V1;
-        let layout = parameter_layout_dims_v1::<D>(v8);
+        let variant =
+            NetVariantV1::of_architecture_v1(self.model.config_v1().model_architecture_version);
+        let layout = parameter_layout_dims_v1::<D>(variant);
         self.model.visit_parameters_v1(|name, shape, values| {
             let ordinal = parameter_tensor_count;
             parameter_tensor_count += 1;
@@ -2252,7 +2326,7 @@ impl<D: NetDimsV1> NativePolicyValueTrainStateDimsV1<D> {
         });
         if parameter_manifest_invalid
             || parameter_tensor_count != layout.len()
-            || parameter_element_count != parameter_count_dims_v1::<D>(v8)
+            || parameter_element_count != parameter_count_dims_v1::<D>(variant)
         {
             return Err(NativePolicyTrainErrorV1::ParameterManifest);
         }
@@ -4750,7 +4824,13 @@ impl DecisionTapeArenaCapacityV1 {
     fn checked_dims_v1<D: NetDimsV1>(
         counts: ValidatedCountsV1,
     ) -> Result<Self, NativePolicyTrainErrorV1> {
-        Self::checked_layout_dims_v1::<D>(counts, ACTION_FEATURE_DIM_V1, 0)
+        Self::checked_layout_dims_v1::<D>(
+            counts,
+            ACTION_FEATURE_DIM_V1,
+            0,
+            OBJECT_FEATURE_DIM_V1,
+            STATE_DIM_V1,
+        )
     }
 
     /// [`Self::checked_dims_v1`] for an action width `action_feature_dim`
@@ -4759,12 +4839,14 @@ impl DecisionTapeArenaCapacityV1 {
         counts: ValidatedCountsV1,
         action_feature_dim: usize,
         pairing_rows: usize,
+        object_feature_dim: usize,
+        state_dim: usize,
     ) -> Result<Self, NativePolicyTrainErrorV1> {
         let mut f32_count = 0usize;
         checked_add_tape_rows_v1(
             &mut f32_count,
             counts.object_count,
-            D::OBJECT_ENCODER_INPUT + 2 * D::HIDDEN,
+            object_spec_v1::<D>(object_feature_dim).input_dim + 2 * D::HIDDEN,
         )?;
         checked_add_tape_rows_v1(
             &mut f32_count,
@@ -4776,7 +4858,11 @@ impl DecisionTapeArenaCapacityV1 {
             counts.object_count,
             D::NODE_UPDATE_INPUT + 2 * D::HIDDEN,
         )?;
-        checked_add_tape_rows_v1(&mut f32_count, 1, D::STATE_ENCODER_INPUT + 2 * D::HIDDEN)?;
+        checked_add_tape_rows_v1(
+            &mut f32_count,
+            1,
+            state_spec_v1::<D>(state_dim).input_dim + 2 * D::HIDDEN,
+        )?;
         checked_add_tape_rows_v1(
             &mut f32_count,
             counts.action_ref_count,
@@ -4940,6 +5026,10 @@ struct DecisionTapeV1 {
     /// The input contract's action width: 195, or 196 for the V8 inclusion
     /// net (`v8_inclusion_v1`).
     action_feature_dim: usize,
+    /// The input contract's object and state widths: net-8's, or the FlatV9
+    /// net's (`v9_cube_v1`).
+    object_feature_dim: usize,
+    state_dim: usize,
     /// The V8 inclusion net's pairing path, when the decision has a pending
     /// block; None for every other tape.
     pairing: Option<PairingTapeV1>,
@@ -5304,14 +5394,22 @@ fn forward_with_tape_input_major_dims_v1<D: NetDimsV1>(
     // the pairing path, whose four tensors follow net-8's 33.
     let action_feature_dim = config.action_feature_dim;
     let pairing_rows = encoded.pairing_node_indices.len() / 2;
-    let v8 = config.model_architecture_version == V8_MODEL_ARCHITECTURE_VERSION_V1;
-    if v8 != (parameters.len() == V8_PARAMETER_TENSOR_COUNT_V1) || (!v8 && pairing_rows != 0) {
+    // The FlatV9 net (`v9_cube_v1`) also widens the object and state rows.
+    let (object_feature_dim, state_dim) = (config.object_feature_dim, config.state_dim);
+    let variant = NetVariantV1::of_architecture_v1(config.model_architecture_version);
+    let v8 = variant.has_v8_inputs_v1();
+    if v8 != (parameters.len() == V8_PARAMETER_TENSOR_COUNT_V1)
+        || (!v8 && pairing_rows != 0)
+        || variant != NetVariantV1::of_manifest_v1(parameters)
+    {
         return Err(NativePolicyTrainErrorV1::ParameterManifest);
     }
     let capacities = DecisionTapeArenaCapacityV1::checked_layout_dims_v1::<D>(
         counts,
         action_feature_dim,
         pairing_rows,
+        object_feature_dim,
+        state_dim,
     )?;
     let mut f32_arena = Vec::with_capacity(capacities.f32_count);
     let mut usize_arena = Vec::with_capacity(capacities.usize_count);
@@ -5332,10 +5430,10 @@ fn forward_with_tape_input_major_dims_v1<D: NetDimsV1>(
         .copied()
         .enumerate()
     {
-        let feature_begin = object * OBJECT_FEATURE_DIM_V1;
+        let feature_begin = object * object_feature_dim;
         append_external_f32_v1(
             &mut f32_arena,
-            &encoded.object_features[feature_begin..feature_begin + OBJECT_FEATURE_DIM_V1],
+            &encoded.object_features[feature_begin..feature_begin + object_feature_dim],
         )?;
         let embedding_begin = token * D::CARD_EMBEDDING;
         append_external_f32_v1(
@@ -5348,7 +5446,7 @@ fn forward_with_tape_input_major_dims_v1<D: NetDimsV1>(
     let object_encoder = two_layer_forward_into_arena_dims_v1::<D>(
         parameters,
         input_major,
-        D::OBJECT_SPEC,
+        object_spec_v1::<D>(object_feature_dim),
         object_input,
         counts.object_count,
         &mut f32_arena,
@@ -5509,7 +5607,7 @@ fn forward_with_tape_input_major_dims_v1<D: NetDimsV1>(
     let state_encoder = two_layer_forward_into_arena_dims_v1::<D>(
         parameters,
         input_major,
-        D::STATE_SPEC,
+        state_spec_v1::<D>(state_dim),
         state_input,
         1,
         &mut f32_arena,
@@ -5664,6 +5762,8 @@ fn forward_with_tape_input_major_dims_v1<D: NetDimsV1>(
     Ok(DecisionTapeV1 {
         hidden_dim: D::HIDDEN,
         action_feature_dim,
+        object_feature_dim,
+        state_dim,
         pairing,
         f32_arena,
         usize_arena,
@@ -5739,15 +5839,22 @@ trait ReverseGradientSinkV1<'t> {
 
     /// Each object's card-embedding row receives the embedding part of that
     /// object's `d_object_input` row; padding token 0 receives nothing.
+    /// `object_feature_dim` is the tape's object width: each object row of
+    /// `d_object_input` is its features, then its embedding.
     fn card_embedding_dims_v1<D: NetDimsV1>(
         &mut self,
         object_card_ids: &'t [usize],
         d_object_input: &[f32],
+        object_feature_dim: usize,
     );
 
     /// [`Self::card_embedding_dims_v1`] at `Net8DimsV1`.
     fn card_embedding_v1(&mut self, object_card_ids: &'t [usize], d_object_input: &[f32]) {
-        self.card_embedding_dims_v1::<Net8DimsV1>(object_card_ids, d_object_input);
+        self.card_embedding_dims_v1::<Net8DimsV1>(
+            object_card_ids,
+            d_object_input,
+            OBJECT_FEATURE_DIM_V1,
+        );
     }
 }
 
@@ -5785,12 +5892,14 @@ impl<'t> ReverseGradientSinkV1<'t> for AccumulateGradientsV1<'_> {
         &mut self,
         object_card_ids: &'t [usize],
         d_object_input: &[f32],
+        object_feature_dim: usize,
     ) {
+        let stride = object_spec_v1::<D>(object_feature_dim).input_dim;
         for (object, token) in object_card_ids.iter().copied().enumerate() {
             if token == 0 {
                 continue;
             }
-            let source = object * D::OBJECT_ENCODER_INPUT + OBJECT_FEATURE_DIM_V1;
+            let source = object * stride + object_feature_dim;
             let destination = token * D::CARD_EMBEDDING;
             for embedding in 0..D::CARD_EMBEDDING {
                 self.0[CARD_EMBEDDING][destination + embedding] +=
@@ -6027,18 +6136,18 @@ fn reverse_decision_into_dims_v1<'t, D: NetDimsV1>(
     two_layer_backward_into_dims_v1::<D>(
         parameters,
         sink,
-        D::STATE_SPEC,
+        state_spec_v1::<D>(tape.state_dim),
         &tape.f32_arena,
         &tape.state_encoder,
         d_state_hidden,
         two_layer_second_pre,
         two_layer_first_output,
         // Read below from the pooled object groups on.
-        STATE_DIM_V1,
+        tape.state_dim,
         d_state_input,
     )?;
     for (object, group) in object_groups.iter().copied().enumerate() {
-        let source = STATE_DIM_V1 + group * D::HIDDEN;
+        let source = tape.state_dim + group * D::HIDDEN;
         let destination = object * D::HIDDEN;
         for hidden in 0..D::HIDDEN {
             d_object_hidden[destination + hidden] += d_state_input[source + hidden];
@@ -6157,17 +6266,17 @@ fn reverse_decision_into_dims_v1<'t, D: NetDimsV1>(
     two_layer_backward_into_dims_v1::<D>(
         parameters,
         sink,
-        D::OBJECT_SPEC,
+        object_spec_v1::<D>(tape.object_feature_dim),
         &tape.f32_arena,
         &tape.object_encoder,
         d_object_base,
         two_layer_second_pre,
         two_layer_first_output,
         // The card embedding's sinks read from the embedding on.
-        OBJECT_FEATURE_DIM_V1,
+        tape.object_feature_dim,
         d_object_input,
     )?;
-    sink.card_embedding_dims_v1::<D>(object_card_ids, d_object_input);
+    sink.card_embedding_dims_v1::<D>(object_card_ids, d_object_input, tape.object_feature_dim);
     Ok(())
 }
 
@@ -6926,8 +7035,8 @@ fn validate_parameter_manifest_dims_v1<D: NetDimsV1>(
 ) -> Result<(), NativePolicyTrainErrorV1> {
     // The V8 inclusion net's manifest is net-8's widened by exactly one
     // column and four appended tensors (`parameter_layout_dims_v1`).
-    let v8 = parameters.len() == V8_PARAMETER_TENSOR_COUNT_V1;
-    let layout = parameter_layout_dims_v1::<D>(v8);
+    let variant = NetVariantV1::of_manifest_v1(parameters);
+    let layout = parameter_layout_dims_v1::<D>(variant);
     if parameters.len() != layout.len()
         || parameters
             .iter()
@@ -6943,7 +7052,7 @@ fn validate_parameter_manifest_dims_v1<D: NetDimsV1>(
             .iter()
             .map(|parameter| parameter.tensor_values_v1().len())
             .sum::<usize>()
-            != parameter_count_dims_v1::<D>(v8)
+            != parameter_count_dims_v1::<D>(variant)
         || parameters[CARD_EMBEDDING].tensor_values_v1()[..D::CARD_EMBEDDING]
             .iter()
             .any(|value| value.to_bits() != 0)

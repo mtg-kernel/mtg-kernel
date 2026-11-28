@@ -74,7 +74,7 @@ impl V8CoordinateClassV1 {
 /// row-major order.
 pub(crate) fn v8_coordinate_classes_v1(tensor: usize) -> Vec<V8CoordinateClassV1> {
     use V8CoordinateClassV1::*;
-    let layout = parameter_layout_dims_v1::<Net8DimsV1>(true);
+    let layout = parameter_layout_dims_v1::<Net8DimsV1>(NetVariantV1::V8Inclusion);
     let count = layout[tensor].1.iter().product::<usize>();
     let class = match tensor {
         PAIRING_FIRST_WEIGHT_V1 => NewPairingFanIn,
@@ -154,7 +154,7 @@ pub(crate) fn v8_snapshot_v1(
 ) -> (NativePolicyValueTrainSnapshotV1, u64) {
     let mut rng = SplitMix64::seed(seed);
     let mut drawn = 0u64;
-    let layout = parameter_layout_dims_v1::<Net8DimsV1>(true);
+    let layout = parameter_layout_dims_v1::<Net8DimsV1>(NetVariantV1::V8Inclusion);
     let mut parameters = Vec::with_capacity(layout.len());
     let mut first_moments = Vec::with_capacity(layout.len());
     let mut second_moments = Vec::with_capacity(layout.len());

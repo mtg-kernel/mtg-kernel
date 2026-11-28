@@ -15,6 +15,7 @@ pub(crate) mod public_inputs_v1;
 mod scratch_v1;
 pub(crate) mod stack_inputs_v1;
 pub(crate) mod v8_inclusion_v1;
+pub(crate) mod v9_cube_v1;
 
 #[cfg(test)]
 use scratch_v1::NativePolicyValueOutputViewV1;
@@ -993,11 +994,15 @@ impl NativePolicyValueNetV1 {
         )>,
         hidden_capture: Option<&mut NativeHiddenCaptureV1>,
     ) -> Result<NativePolicyValueOutputV1, NativePolicyValueErrorV1> {
-        let mut object_input = Vec::with_capacity(counts.object_count * OBJECT_ENCODER_INPUT_V1);
+        // Net-8's widths, or the FlatV9 net's (`v9_cube_v1`), from the net's
+        // own config: the same loop over the same values for net-8.
+        let object_width = self.config.object_feature_dim;
+        let mut object_input =
+            Vec::with_capacity(counts.object_count * self.object_encoder.first.input_dim);
         for object in 0..counts.object_count {
-            let features_begin = object * OBJECT_FEATURE_DIM_V1;
+            let features_begin = object * object_width;
             object_input.extend_from_slice(
-                &encoded.object_features[features_begin..features_begin + OBJECT_FEATURE_DIM_V1],
+                &encoded.object_features[features_begin..features_begin + object_width],
             );
             let token = encoded.object_card_ids[object] as usize;
             let embedding_begin = token * CARD_EMBEDDING_DIM_V1;
@@ -1077,7 +1082,7 @@ impl NativePolicyValueNetV1 {
 
         let mut pooled_objects = vec![0.0; POOLED_OBJECT_DIM_V1];
         add_indexed_rows_v1(&mut pooled_objects, &object_hidden, encoded.object_groups);
-        let mut state_input = Vec::with_capacity(STATE_ENCODER_INPUT_V1);
+        let mut state_input = Vec::with_capacity(self.state_encoder.first.input_dim);
         state_input.extend_from_slice(encoded.state);
         state_input.extend_from_slice(&pooled_objects);
         let state_hidden = public_inputs_v1::apply_optional_public_projection_v1(
@@ -1374,9 +1379,11 @@ impl NativePolicyValueNetV1 {
         Ok(self)
     }
 
-    /// Net-8's parameter count, or the V8 inclusion net's.
+    /// Net-8's parameter count, the V8 inclusion net's or the FlatV9 net's.
     pub(crate) fn expected_parameter_count_v1(&self) -> usize {
-        if self.pairing.is_some() {
+        if self.is_v9_cube_v1() {
+            v9_cube_v1::V9_PARAMETER_COUNT_V1
+        } else if self.pairing.is_some() {
             v8_inclusion_v1::V8_PARAMETER_COUNT_V1
         } else {
             PARAMETER_COUNT_V1
@@ -1424,6 +1431,19 @@ impl NativePolicyValueNetV1 {
             &self.action_encoder.first,
             self.pairing.as_ref(),
         )?;
+        // The object and state first layers match the architecture's widths
+        // (FlatV9's, or net-8's for every other net).
+        let (object_input, state_input) =
+            v9_cube_v1::first_layer_inputs_v1(self.config.model_architecture_version);
+        if self.object_encoder.first.input_dim != object_input
+            || self.config.object_feature_dim + CARD_EMBEDDING_DIM_V1 != object_input
+            || self.state_encoder.first.input_dim != state_input
+            || self.config.state_dim + POOLED_OBJECT_DIM_V1 != state_input
+        {
+            return Err(NativePolicyValueErrorV1::ParameterInvariant(
+                "first_layer_widths",
+            ));
+        }
         Ok(())
     }
 

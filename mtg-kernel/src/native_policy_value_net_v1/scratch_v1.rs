@@ -181,13 +181,14 @@ impl NativePolicyValueNetV1 {
         }
         clear_for(
             &mut scratch.input,
-            counts.object_count * OBJECT_ENCODER_INPUT_V1,
+            counts.object_count * self.object_encoder.first.input_dim,
         );
+        let object_width = self.config.object_feature_dim;
         for object in 0..counts.object_count {
-            let begin = object * OBJECT_FEATURE_DIM_V1;
+            let begin = object * object_width;
             scratch
                 .input
-                .extend_from_slice(&encoded.object_features[begin..begin + OBJECT_FEATURE_DIM_V1]);
+                .extend_from_slice(&encoded.object_features[begin..begin + object_width]);
             let token = encoded.object_card_ids[object] as usize;
             let begin = token * CARD_EMBEDDING_DIM_V1;
             scratch
@@ -289,7 +290,7 @@ impl NativePolicyValueNetV1 {
             &scratch.object_hidden,
             encoded.object_groups,
         );
-        clear_for(&mut scratch.input, STATE_ENCODER_INPUT_V1);
+        clear_for(&mut scratch.input, self.state_encoder.first.input_dim);
         scratch.input.extend_from_slice(encoded.state);
         scratch.input.extend_from_slice(&scratch.pooled_objects);
         two_layer_into(

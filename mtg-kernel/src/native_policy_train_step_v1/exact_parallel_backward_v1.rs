@@ -177,7 +177,9 @@ impl<'t> ReverseGradientSinkV1<'t> for RecordTermsV1<'_, 't> {
         &mut self,
         object_card_ids: &'t [usize],
         d_object_input: &[f32],
+        object_feature_dim: usize,
     ) {
+        let stride = object_feature_dim + D::CARD_EMBEDDING;
         let terms = &mut *self.terms;
         for (object, token) in object_card_ids.iter().copied().enumerate() {
             if token == 0 {
@@ -188,7 +190,7 @@ impl<'t> ReverseGradientSinkV1<'t> for RecordTermsV1<'_, 't> {
                 token * D::CARD_EMBEDDING + D::CARD_EMBEDDING <= self.card_embedding_len,
                 "card token {token} is outside the card embedding"
             );
-            let source = object * D::OBJECT_ENCODER_INPUT + OBJECT_FEATURE_DIM_V1;
+            let source = object * stride + object_feature_dim;
             terms.card_tokens.push(token);
             terms
                 .d_card_embeddings
