@@ -200,6 +200,8 @@ pub mod bounded_staleness_async_harness_v1;
 pub mod bounded_staleness_async_production_v1;
 pub mod bounded_staleness_async_v1;
 pub mod card_def;
+#[cfg(feature = "eternal-fixtures")]
+pub mod card_semantics_e1_cube_v1;
 pub mod combat_damage_v1;
 pub(crate) mod continuous_characteristics_v1;
 pub(crate) mod continuous_source_frame_v1;

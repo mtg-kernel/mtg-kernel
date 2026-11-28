@@ -806,6 +806,9 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
     let read_executor_dir = repo.join("mtg-kernel/examples/cube_pod_runner");
     // M4 D7 read executor verifies the ordered pool with D1's loader under D0.3 to D0.5.
     let read_executor_example = repo.join("mtg-kernel/examples/cube_pod_runner_v1.rs");
+    // M2 T8: arm E's declared cube table and scales pins and their tests.
+    let arm_e_cube = repo.join("mtg-kernel/src/card_semantics_e1_cube_v1.rs");
+    let arm_e_cube_dir = repo.join("mtg-kernel/src/card_semantics_e1_cube_v1");
     let mut hits = Vec::new();
     let mut stack: Vec<std::path::PathBuf> = roots.iter().map(|r| repo.join(r)).collect();
     while let Some(path) = stack.pop() {
@@ -818,6 +821,8 @@ pub fn unreferenced(repo: &Path) -> Vec<String> {
             || (path.components().eq(launcher_example.components()) && path.is_file())
             || path.starts_with(&read_executor_dir)
             || (path.components().eq(read_executor_example.components()) && path.is_file())
+            || (path.components().eq(arm_e_cube.components()) && path.is_file())
+            || path.starts_with(&arm_e_cube_dir)
         {
             continue;
         }

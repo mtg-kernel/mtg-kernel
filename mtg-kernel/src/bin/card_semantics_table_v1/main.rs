@@ -5,7 +5,9 @@
 //! (`data/pauper_support_v1.json`, default build) or the Vintage Cube list
 //! (`data/cube_v1/mtgo_vintage_cube_20261007.json`, `eternal-fixtures` build)
 //! and writes a fixed-width integer vector per card, bound to
-//! `KERNEL_CARDDB_HASH`. Nothing in the crate reads either table.
+//! `KERNEL_CARDDB_HASH`. Only the declared consumers read the cube tables
+//! (`checks::unreferenced`): M4's loader reads the provisional cube table and
+//! arm E (`card_semantics_e1_cube_v1`, M2 T8) the full one.
 //!
 //! Usage (from the repository root or anywhere; paths are fixed):
 //!   card_semantics_table_v1 --write          regenerate the Pauper table and dump (default build)
@@ -183,6 +185,63 @@ fn generate_cube(repo: &Path, cube_prior: &[(String, String)]) -> Result<Generat
     })
 }
 
+/// The cube table's committed column order: the full table's, or before the
+/// full table exists, the provisional table's (so the full table keeps every
+/// provisional column at its index). The provisional table must exist.
+fn cube_prior(repo: &Path) -> Result<Vec<(String, String)>, String> {
+    match read_optional(repo, table::CUBE_TABLE_PATH)? {
+        Some(text) => table::try_committed_vocabulary(&text),
+        None => provisional_columns(repo),
+    }
+}
+
+/// The provisional cube table's columns, read once and only when its bytes
+/// are the ones M4 pins.
+fn provisional_columns(repo: &Path) -> Result<Vec<(String, String)>, String> {
+    let path = table::CUBE_PROVISIONAL_TABLE_PATH;
+    let bytes = std::fs::read(repo.join(path)).map_err(|e| format!("{path}: {e}"))?;
+    if table::sha256_hex(&bytes) != table::CUBE_PROVISIONAL_TABLE_SHA256 {
+        return Err(format!(
+            "{path} differs from the provisional table M4 pins ({})",
+            table::CUBE_PROVISIONAL_TABLE_SHA256
+        ));
+    }
+    let text = String::from_utf8(bytes).map_err(|e| format!("{path}: {e}"))?;
+    table::try_committed_vocabulary(&text)
+}
+
+/// `--cube --write`: under the cube writer lock, generates the full table,
+/// refuses it unless it keeps every provisional column at its index, computes
+/// its arm E scales (M2 T8) before any output is opened, publishes the table
+/// and dump, then publishes the scales by an atomic rename from the staging
+/// directory. `--cube --check` catches a run interrupted between the two
+/// publications.
+fn regenerate_cube(repo: &Path) -> Result<(), String> {
+    with_writer_lock(repo, table::CUBE_TABLE_PATH, || {
+        let prior = cube_prior(repo)?;
+        let mut generated = generate_cube(repo, &prior)?;
+        let columns = table::try_committed_vocabulary(&generated.table_text)?;
+        match provisional_columns(repo) {
+            Ok(provisional) if columns.starts_with(&provisional) => {}
+            Ok(_) => generated.failures.push(format!(
+                "generated cube table does not keep the columns of {}",
+                table::CUBE_PROVISIONAL_TABLE_PATH
+            )),
+            Err(e) => generated.failures.push(e),
+        }
+        print!("{}", generated.report);
+        require_checks(&generated.failures)?;
+        let scales = cube_scales_text(&generated.table_text)?;
+        write_outputs_at(
+            repo,
+            table::CUBE_TABLE_PATH,
+            table::CUBE_DUMP_PATH,
+            &generated,
+        )?;
+        publish_cube_scales(repo, &scales)
+    })
+}
+
 fn committed_prior_at(repo: &Path, relative: &str) -> Result<Vec<(String, String)>, String> {
     match read_optional(repo, relative)? {
         Some(text) => table::try_committed_vocabulary(&text),
@@ -273,10 +332,78 @@ fn check_cube(repo: &Path) -> Result<(String, Vec<String>), String> {
             table::CUBE_DUMP_PATH
         ));
     }
+    failures.extend(cube_scales_failures(repo, &committed_table));
+    match provisional_columns(repo) {
+        Ok(columns) if prior.starts_with(&columns) => {}
+        Ok(_) => failures.push(format!(
+            "{} does not keep the provisional table's columns at their indices",
+            table::CUBE_TABLE_PATH
+        )),
+        Err(e) => failures.push(e),
+    }
     for hit in checks::unreferenced(repo) {
         failures.push(format!("{hit} names the card semantics table"));
     }
     Ok((generated.report, failures))
+}
+
+/// The arm E scales document (M2 T8) of a cube table text: the trainer
+/// reader's power-of-two column divisors and binding digest. It refuses a
+/// table the reader would refuse.
+#[cfg(feature = "eternal-fixtures")]
+fn cube_scales_text(table_text: &str) -> Result<String, String> {
+    mtg_kernel::card_semantics_e1_cube_v1::scales_json_v1(table_text.as_bytes())
+        .map_err(|e| format!("{}: arm E scales: {e}", table::CUBE_TABLE_PATH))
+}
+
+#[cfg(not(feature = "eternal-fixtures"))]
+fn cube_scales_text(_table_text: &str) -> Result<String, String> {
+    Err(CUBE_FEATURE_ERR.to_string())
+}
+
+/// Publishes the scales text: written in the cube table's staging directory,
+/// then renamed over the committed file. The caller holds the writer lock.
+fn publish_cube_scales(repo: &Path, text: &str) -> Result<(), String> {
+    let path = cube_scales_path();
+    let staged = staging_dir(repo, table::CUBE_TABLE_PATH).join("scales.json");
+    std::fs::write(&staged, text).map_err(|e| format!("{}: {e}", staged.display()))?;
+    rename_file(&staged, &repo.join(path)).map_err(|e| {
+        let _ = std::fs::remove_file(&staged);
+        format!("{path}: {e}")
+    })
+}
+
+#[cfg(feature = "eternal-fixtures")]
+fn cube_scales_path() -> &'static str {
+    mtg_kernel::card_semantics_e1_cube_v1::SCALES_PATH_V1
+}
+
+#[cfg(not(feature = "eternal-fixtures"))]
+fn cube_scales_path() -> &'static str {
+    "data/card_semantics_v1/cube_table_v1_full_e1_scales.json"
+}
+
+/// The committed scales document must equal the one computed from the
+/// committed cube table.
+#[cfg(feature = "eternal-fixtures")]
+fn cube_scales_failures(repo: &Path, committed_table: &str) -> Vec<String> {
+    use mtg_kernel::card_semantics_e1_cube_v1::SCALES_PATH_V1;
+    let expected = match cube_scales_text(committed_table) {
+        Ok(text) => text,
+        Err(e) => return vec![e],
+    };
+    match read_optional(repo, SCALES_PATH_V1) {
+        Ok(Some(text)) if text == expected => Vec::new(),
+        Ok(_) => vec![format!(
+            "{SCALES_PATH_V1} differs from the committed cube table's scales: regenerate with `{CUBE_REGEN_CMD}`"
+        )],
+        Err(e) => vec![e],
+    }
+}
+
+#[cfg(not(feature = "eternal-fixtures"))]
+fn cube_scales_failures(_repo: &Path, _committed_table: &str) -> Vec<String> {
+    vec![CUBE_FEATURE_ERR.to_string()]
 }
 
 fn require_checks(failures: &[String]) -> Result<(), String> {
@@ -528,10 +655,7 @@ fn run_args(repo: &Path, args: &[String]) -> Result<(), String> {
     let cli = parse_args(args)?;
     if cli.cube {
         return match cli.mode {
-            Mode::Write => regenerate(repo, table::CUBE_TABLE_PATH, table::CUBE_DUMP_PATH, || {
-                let prior = committed_prior_at(repo, table::CUBE_TABLE_PATH)?;
-                generate_cube(repo, &prior)
-            }),
+            Mode::Write => regenerate_cube(repo),
             Mode::Check => {
                 let (report, failures) = check_cube(repo)?;
                 print!("{report}");
@@ -1467,10 +1591,14 @@ mod tests {
         let allowed = [
             "mtg-kernel/src/cube_draft_build_v1/nested/loader.rs",
             integration_test,
+            "mtg-kernel/src/card_semantics_e1_cube_v1.rs",
+            "mtg-kernel/src/card_semantics_e1_cube_v1/tests.rs",
         ];
         let denied = [
             "mtg-kernel/src/cube_draft_build_v1_extra/loader.rs",
             "mtg-kernel/tests/eternal/cube_draft_build_v1.rs.bak",
+            "mtg-kernel/src/card_semantics_e1_cube_v1.rs.bak",
+            "mtg-kernel/src/card_semantics_e1_cube_v1_extra/reader.rs",
         ];
         for path in allowed.into_iter().chain(denied) {
             let path = temp.join(path);
@@ -1582,7 +1710,11 @@ mod tests {
     fn cube_carddb_mismatch_fails_check_naming_regeneration_command() {
         let temp = scratch_repo("cube-carddb-mismatch");
         let original = repo_root();
-        for path in [table::CUBE_POOL_PATH, table::TABLE_PATH] {
+        for path in [
+            table::CUBE_POOL_PATH,
+            table::TABLE_PATH,
+            table::CUBE_PROVISIONAL_TABLE_PATH,
+        ] {
             std::fs::copy(original.join(path), temp.join(path)).unwrap();
         }
         run_args(&temp, &args(&["--cube", "--write"])).unwrap();
@@ -1610,7 +1742,11 @@ mod tests {
     fn cube_write_and_check_roundtrip_preserves_pauper_prefix_and_is_idempotent() {
         let temp = scratch_repo("cube-roundtrip");
         let original = repo_root();
-        for path in [table::CUBE_POOL_PATH, table::TABLE_PATH] {
+        for path in [
+            table::CUBE_POOL_PATH,
+            table::TABLE_PATH,
+            table::CUBE_PROVISIONAL_TABLE_PATH,
+        ] {
             std::fs::copy(original.join(path), temp.join(path)).unwrap();
         }
         run_args(&temp, &args(&["--cube", "--write"])).unwrap();
@@ -1643,10 +1779,97 @@ mod tests {
         assert!(failures.is_empty(), "{failures:#?}");
 
         // Second regeneration must keep exact column order and produce byte-identical output.
+        let first_scales = read(&temp, cube_scales_path()).unwrap();
         run_args(&temp, &args(&["--cube", "--write"])).unwrap();
         assert_eq!(read(&temp, table::CUBE_TABLE_PATH).unwrap(), first_table);
         assert_eq!(read(&temp, table::CUBE_DUMP_PATH).unwrap(), first_dump);
+        assert_eq!(read(&temp, cube_scales_path()).unwrap(), first_scales);
+        assert_eq!(staged(&temp, table::CUBE_TABLE_PATH), [LOCK_FILE]);
         std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    /// M2 T8: the full table keeps every provisional column at its index and
+    /// adds the five fetch columns; the fetch family tells apart fetchlands
+    /// whose rows the walk alone made identical.
+    #[cfg(feature = "eternal-fixtures")]
+    #[test]
+    fn full_cube_table_keeps_provisional_columns_and_adds_the_fetch_family() {
+        let repo = repo_root();
+        let provisional = table::try_committed_vocabulary(
+            &read(&repo, table::CUBE_PROVISIONAL_TABLE_PATH).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(cube_prior(&repo).unwrap()[..provisional.len()], provisional);
+        let generated = generate_cube(&repo, &provisional).unwrap();
+        assert!(generated.failures.is_empty(), "{:#?}", generated.failures);
+        let vocab = table::try_committed_vocabulary(&generated.table_text).unwrap();
+        assert_eq!(vocab[..provisional.len()], provisional);
+        let fetch: Vec<usize> = table::BASIC_LANDS
+            .iter()
+            .map(|basic| {
+                let token = format!("{}{basic}", table::FETCH_PREFIX);
+                vocab.iter().position(|(t, _)| *t == token).expect(&token)
+            })
+            .collect();
+        assert!(fetch.iter().all(|&i| i >= provisional.len()));
+        assert!(fetch.iter().all(|&i| vocab[i].1 == "count"));
+        let parsed: serde_json::Value = serde_json::from_str(&generated.table_text).unwrap();
+        let row = |name: &str| -> Vec<i64> {
+            let row = parsed["cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["name"] == name)
+                .unwrap_or_else(|| panic!("{name}"));
+            fetch
+                .iter()
+                .map(|&i| row["vector"][i].as_i64().unwrap())
+                .collect()
+        };
+        // Plains, Island, Swamp, Mountain, Forest.
+        assert_eq!(row("Scalding Tarn"), [0, 1, 0, 1, 0]);
+        assert_eq!(row("Polluted Delta"), [0, 1, 1, 0, 0]);
+        assert_eq!(row("Arid Mesa"), [1, 0, 0, 1, 0]);
+        assert_eq!(row("Island"), [0, 0, 0, 0, 0]);
+        assert_eq!(row("Lightning Bolt"), [0, 0, 0, 0, 0]);
+    }
+
+    /// M2 T8: `--cube --check` refuses a changed scales file and a changed
+    /// provisional table.
+    #[cfg(feature = "eternal-fixtures")]
+    #[test]
+    fn cube_check_flags_changed_scales_and_provisional_table() {
+        let temp = scratch_repo("cube-scales-provisional");
+        let original = repo_root();
+        for path in [
+            table::CUBE_POOL_PATH,
+            table::TABLE_PATH,
+            table::CUBE_PROVISIONAL_TABLE_PATH,
+        ] {
+            std::fs::copy(original.join(path), temp.join(path)).unwrap();
+        }
+        run_args(&temp, &args(&["--cube", "--write"])).unwrap();
+        let (_, failures) = check_cube(&temp).unwrap();
+        assert!(failures.is_empty(), "{failures:#?}");
+        let scales = mtg_kernel::card_semantics_e1_cube_v1::SCALES_PATH_V1;
+        let text = read(&temp, scales).unwrap();
+        std::fs::write(
+            temp.join(scales),
+            text.replacen("\"binding\": \"", "\"binding\": \"0", 1),
+        )
+        .unwrap();
+        let mut provisional = std::fs::read(temp.join(table::CUBE_PROVISIONAL_TABLE_PATH)).unwrap();
+        provisional.push(b'\n');
+        std::fs::write(temp.join(table::CUBE_PROVISIONAL_TABLE_PATH), provisional).unwrap();
+        let (_, failures) = check_cube(&temp).unwrap();
+        std::fs::remove_dir_all(temp).unwrap();
+        assert!(failures.iter().any(|f| f.contains(scales)), "{failures:#?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("differs from the provisional table M4 pins")),
+            "{failures:#?}"
+        );
     }
 
     #[cfg(feature = "eternal-fixtures")]

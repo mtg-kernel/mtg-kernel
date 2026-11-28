@@ -1,0 +1,67 @@
+{
+ "schema": "cube-stage1-fence/v1",
+ "cube_list": "data/cube_v1/mtgo_vintage_cube_20261007.json",
+ "source": "cube halt census of 240,000 games at f7bc11ddd plus the lead's amendment of 2026-11-23; fence trial 1 (84,000 games at 82d2a8571), its four replays and A3 amendment 1: Shifting Woodland, Deep-Cavern Bat, Candelabra of Tawnos leave the fence; fence trial 2 (84,000 games at M2 97ad90107) and A3 amendment 2: Time Walk, Emrakul, the Aeons Torn, Sedgemoor Witch, Kappa Cannoneer, Embereth Shieldbreaker leave the fence",
+ "cards": [
+  {
+   "name": "Aang's Iceberg",
+   "reason": "InvalidEffectContinuation (top sources)"
+  },
+  {
+   "name": "Ajani, Nacatl Pariah",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  },
+  {
+   "name": "Bloodbraid Challenger",
+   "reason": "staged Escape"
+  },
+  {
+   "name": "Brain Freeze",
+   "reason": "stack overflow (issue 892)"
+  },
+  {
+   "name": "Etali, Primal Conqueror",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  },
+  {
+   "name": "Fable of the Mirror-Breaker",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  },
+  {
+   "name": "Nethergoyf",
+   "reason": "staged Escape"
+  },
+  {
+   "name": "Phlage, Titan of Fire's Fury",
+   "reason": "staged Escape"
+  },
+  {
+   "name": "Sage of the Skies",
+   "reason": "InvalidEffectContinuation (top sources)"
+  },
+  {
+   "name": "Sink into Stupor",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  },
+  {
+   "name": "Talon Gates of Madara",
+   "reason": "malformed stack target metadata"
+  },
+  {
+   "name": "Tamiyo, Inquisitive Student",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  },
+  {
+   "name": "Underworld Breach",
+   "reason": "staged Escape"
+  },
+  {
+   "name": "Uro, Titan of Nature's Wrath",
+   "reason": "staged Escape"
+  },
+  {
+   "name": "Witch Enchanter",
+   "reason": "transformed battlefield return (issue 893): the card's own effect returns or plays an object transformed or by its back face, which panics when the object is a copy without that face (traced: a Phyrexian Metamorph copy of Fable of the Mirror-Breaker)"
+  }
+ ]
+}
