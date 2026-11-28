@@ -837,7 +837,7 @@ fn validate_origin_decision_against_reordered_candidates_v4(
         #[cfg(test)]
         eprintln!("V4 reconstructed binding header: {_error:?}");
     })?;
-    flat_validate_origin_decision_v1(&original, &session.state).inspect_err(|_error| {
+    flat_validate_origin_decision_for_contract_v1(session, &original).inspect_err(|_error| {
         #[cfg(test)]
         eprintln!("V4 reconstructed decision relation: {_error:?}");
     })?;
@@ -1106,14 +1106,15 @@ impl FastActorSessionV1 {
         // EXISTING entry's own resolution was position-sensitive.
         let mut resolved_objects: Vec<FlatResolvedActionObjectV4> = Vec::new();
         for (action_index, candidate) in current.candidates.iter().enumerate() {
-            flat_validate_semantic_policy_pair_v1(candidate)?;
+            flat_validate_semantic_policy_pair_for_contract_v1(self, candidate)?;
             let action_index_u32 = u32::try_from(action_index)
                 .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
             let ref_start = u32::try_from(unindexed_refs.len())
                 .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
             let semantic =
                 frozen_pending_trigger_semantic_v4(&self.state, candidate.semantic.clone());
-            let core = flat_action_core_and_refs_v1(
+            let core = flat_action_core_and_refs_for_contract_v1(
+                self,
                 &semantic,
                 actor,
                 ref_start,
@@ -1851,6 +1852,7 @@ mod tests {
         // compiles just the removed-family refusal matrix.
         #![cfg_attr(not(feature = "eternal-fixtures"), allow(dead_code, unused_imports))]
         use super::*;
+        use crate::engine::Action;
         use crate::event::{propose_and_commit, ProposedEvent};
         use crate::flat_policy_v2::{
             FlatCompletedDungeonV2, FlatContextPathElementV2, FlatEffectSubtypeChangeV2,
@@ -1859,10 +1861,12 @@ mod tests {
             FlatScoringOwnedBuffersV2,
         };
         use crate::flat_policy_v4::FlatDecisionEncoderV4;
+        use crate::ids::ObjectId;
         use crate::policy_observation_v6::tests::{put, ready_state_for};
         use crate::rl::ActionSemanticV1;
         use crate::rl_session::pauper_london_v1::PauperMulliganModeV1;
-        use crate::state::{GameState, ObjectLinkV4, TriggerUseV1, Zone};
+        use crate::state::{GameState, ObjectLinkV4, Target, TriggerUseV1, Zone};
+        use crate::surface::{SurfaceAction, SurfaceDecision};
 
         #[derive(Default)]
         struct CubeScoringRows {
@@ -2035,6 +2039,341 @@ mod tests {
                 let frozen = FastActorSessionV1::from_v3_fixture_state(triggers);
                 assert!(matches!(
                     try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
+                ));
+            }
+        }
+
+        /// `actor` controls two untapped Myr Enforcers in their first main
+        /// phase; the opponent controls a resolved Jace, the Mind Sculptor.
+        fn attack_target_state(actor: PlayerId) -> (GameState, [ObjectId; 2], ObjectId) {
+            let mut state = ready_state_for(actor);
+            state.active_player = actor;
+            state.priority_player = actor;
+            let attackers = [
+                put(&mut state, actor, "Myr Enforcer", Zone::Battlefield),
+                put(&mut state, actor, "Myr Enforcer", Zone::Battlefield),
+            ];
+            let walker = put(
+                &mut state,
+                actor.opponent(),
+                "Jace, the Mind Sculptor",
+                Zone::Hand,
+            );
+            propose_and_commit(
+                &mut state,
+                ProposedEvent::zone_change(walker, Zone::Battlefield),
+            );
+            assert_eq!(crate::planeswalker_v1::loyalty(&state, walker), Some(3));
+            (state, attackers, walker)
+        }
+
+        fn attack_target_menu(session: &FastActorSessionV1) -> Option<ObjectId> {
+            let current = session.current.as_ref()?;
+            match &current.origin_decision {
+                PolicyDecisionV5::Surface(SurfaceDecision::Decision(
+                    Decision::ChooseAttackTarget { attacker, .. },
+                )) => Some(*attacker),
+                _ => None,
+            }
+        }
+
+        /// Plays the real session forward (passing priority and including
+        /// both attackers) until the engine's 508.1b attack-target prompt.
+        fn drive_to_attack_target(session: &mut FastActorSessionV1, attackers: [ObjectId; 2]) {
+            for _ in 0..64 {
+                if attack_target_menu(session).is_some() {
+                    return;
+                }
+                let decision = expected(session);
+                let (slice, _) = try_encoded_v4(session).unwrap();
+                assert_eq!(slice.active_action_count, decision.legal_action_count);
+                let selected = session
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .candidates
+                    .iter()
+                    .position(|candidate| match &candidate.semantic {
+                        ActionSemanticV1::ChooseAttackerInclusion {
+                            attacker, include, ..
+                        } => *include == attackers.iter().any(|id| id.0 == attacker.arena_id),
+                        ActionSemanticV1::Pass { .. } => true,
+                        _ => false,
+                    })
+                    .expect("a pass or attacker inclusion");
+                session
+                    .step(decision.episode_id, decision.step, selected as u32)
+                    .unwrap();
+            }
+            panic!("the session never reached the attack-target prompt");
+        }
+
+        fn v3_slice(
+            session: &FastActorSessionV1,
+        ) -> Result<
+            (
+                FlatActionDecisionSliceV3,
+                Vec<FlatActionCoreV1>,
+                Vec<FlatActionRefV2>,
+                Vec<FlatActionObjectV2>,
+            ),
+            FlatActionDecisionSliceErrorV1,
+        > {
+            let mut actions = vec![FlatActionCoreV1::default(); 16];
+            let mut refs = vec![FlatActionRefV2::default(); 64];
+            let mut objects = vec![FlatActionObjectV2::default(); 64];
+            let slice = session.encode_current_flat_action_slice_v3(
+                expected(session),
+                &mut FlatActionDecisionSliceBuffersV2 {
+                    actions: &mut actions,
+                    refs: &mut refs,
+                    objects: &mut objects,
+                },
+            )?;
+            actions.truncate(slice.active_action_count as usize);
+            refs.truncate(slice.active_ref_count as usize);
+            objects.truncate(usize::from(slice.active_object_count));
+            Ok((slice, actions, refs, objects))
+        }
+
+        /// Checks every row of the attack-target menu and returns the index
+        /// of the candidate naming `target`.
+        fn assert_attack_target_rows(
+            session: &FastActorSessionV1,
+            actor: PlayerId,
+            attacker: ObjectId,
+            walker: ObjectId,
+            target: Target,
+        ) -> (FlatActionDecisionSliceV3, u32) {
+            let current = session.current.as_ref().unwrap();
+            assert_eq!(current.actor, actor);
+            let targets: Vec<_> = current
+                .candidates
+                .iter()
+                .map(|candidate| match &candidate.policy_action {
+                    PolicyActionV5::Surface(SurfaceAction::Action(Action::ChooseAttackTarget(
+                        target,
+                    ))) => *target,
+                    other => panic!("non attack-target candidate {other:?}"),
+                })
+                .collect();
+            assert_eq!(
+                targets,
+                [Target::Player(actor.opponent()), Target::Object(walker)]
+            );
+            let (slice, actions, refs, objects) = v3_slice(session).unwrap();
+            let (v4, v4_objects) = try_encoded_v4(session).unwrap();
+            assert_eq!(slice.active_action_count, 2);
+            assert_eq!(v4.active_action_count, 2);
+            assert_eq!(v4.active_ref_count, slice.active_ref_count);
+            assert_eq!(v4_objects, objects);
+            for (index, action) in actions.iter().enumerate() {
+                assert_eq!(action.kind, FlatActionKindV1::ChooseTarget);
+                assert_eq!(action.remaining, 1);
+                let own = &refs[action.ref_start as usize
+                    ..action.ref_start as usize + usize::from(action.ref_len)];
+                assert_eq!(own[0].role, FlatActionRefRoleV1::Attacker);
+                assert_eq!(
+                    objects[usize::from(own[0].object_index)].controller_relative,
+                    0
+                );
+                match targets[index] {
+                    Target::Player(_) => {
+                        assert_eq!((action.target_kind, action.target_player), (1, 2));
+                        assert_eq!(own.len(), 1);
+                    }
+                    Target::Object(_) => {
+                        assert_eq!((action.target_kind, action.target_player), (2, 0));
+                        assert_eq!(own.len(), 2);
+                        assert_eq!(own[1].role, FlatActionRefRoleV1::TargetObject);
+                        let row = objects[usize::from(own[1].object_index)];
+                        assert_eq!(row.controller_relative, 1);
+                        assert_eq!(row.zone, flat_zone_v1(Zone::Battlefield));
+                    }
+                }
+            }
+            assert!(current.candidates.iter().all(|candidate| matches!(
+                &candidate.semantic,
+                ActionSemanticV1::ChooseAttackTarget { attacker: reference, .. }
+                    if reference.arena_id == attacker.0
+            )));
+            let index = targets.iter().position(|&t| t == target).unwrap();
+            (slice, index as u32)
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_attack_target_rows_encode_and_apply_through_binding_for_both_seats() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let (state, attackers, walker) = attack_target_state(actor);
+                let mut cube = FastActorSessionV1::from_cube_v1_fixture_state(state);
+                drive_to_attack_target(&mut cube, attackers);
+                let first = attack_target_menu(&cube).unwrap();
+                assert!(attackers.contains(&first));
+                let second = *attackers.iter().find(|&&id| id != first).unwrap();
+
+                // The first attacker attacks Jace through its bound row.
+                let (first_slice, walker_index) =
+                    assert_attack_target_rows(&cube, actor, first, walker, Target::Object(walker));
+                assert_full_v4_scoring(&cube);
+                cube.consume_current_flat_action_slice_v3(first_slice.binding, walker_index)
+                    .unwrap();
+
+                // The second prompt has the same menu shape; the first
+                // binding is stale there and changes nothing.
+                assert_eq!(attack_target_menu(&cube), Some(second));
+                let before = cube.game_state().clone();
+                let stale = cube
+                    .consume_current_flat_action_slice_v3(first_slice.binding, walker_index)
+                    .unwrap_err();
+                assert_eq!(stale.code, RlSessionErrorCode::StaleEnvironmentBinding);
+                assert_eq!(cube.game_state(), &before);
+                let (second_slice, player_index) = assert_attack_target_rows(
+                    &cube,
+                    actor,
+                    second,
+                    walker,
+                    Target::Player(actor.opponent()),
+                );
+                let mut tampered = second_slice.binding;
+                tampered.0.candidate_order_commitment[0] ^= 1;
+                assert_eq!(
+                    cube.consume_current_flat_action_slice_v3(tampered, player_index)
+                        .unwrap_err()
+                        .code,
+                    RlSessionErrorCode::StaleEnvironmentBinding
+                );
+                assert_eq!(cube.game_state(), &before);
+
+                // The second attacker attacks the player.
+                cube.consume_current_flat_action_slice_v3(second_slice.binding, player_index)
+                    .unwrap();
+                let state = cube.game_state();
+                assert!(state.engine.combat.attackers_declared);
+                let attacked = crate::attack_target_v1::attacked_planeswalker(state, first)
+                    .expect("the first attacker attacks Jace");
+                assert_eq!(attacked.object, walker);
+                assert_eq!(
+                    attacked.zone_change_count,
+                    state.objects.get(walker).zone_change_count
+                );
+                assert_eq!(
+                    crate::attack_target_v1::attacked_planeswalker(state, second),
+                    None
+                );
+            }
+        }
+
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_attack_target_refuses_wrong_targets_and_frozen_paths_still_refuse() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let (state, attackers, walker) = attack_target_state(actor);
+                let mut cube = FastActorSessionV1::from_cube_v1_fixture_state(state);
+                drive_to_attack_target(&mut cube, attackers);
+                let attacker = attack_target_menu(&cube).unwrap();
+                let current = cube.current.as_ref().unwrap().clone();
+                let walker_index = current
+                    .candidates
+                    .iter()
+                    .position(|candidate| {
+                        matches!(
+                            &candidate.semantic,
+                            ActionSemanticV1::ChooseAttackTarget {
+                                target: TargetRefV1::Object { object },
+                                ..
+                            } if object.arena_id == walker.0
+                        )
+                    })
+                    .unwrap();
+
+                // A semantic row naming Jace whose executable action attacks
+                // the player is refused by the pair and the origin checks.
+                let mut wrong_action = current.clone();
+                wrong_action.candidates[walker_index].policy_action =
+                    PolicyActionV5::Surface(SurfaceAction::Action(Action::ChooseAttackTarget(
+                        Target::Player(actor.opponent()),
+                    )));
+                assert_eq!(
+                    flat_validate_semantic_policy_pair_for_contract_v1(
+                        &cube,
+                        &wrong_action.candidates[walker_index]
+                    ),
+                    Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation)
+                );
+                assert_eq!(
+                    flat_validate_origin_decision_for_contract_v1(&cube, &wrong_action),
+                    Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation)
+                );
+                let mut corrupted = cube.clone();
+                corrupted.current = Some(wrong_action);
+                assert!(try_encoded_v4(&corrupted).is_err());
+                assert!(v3_slice(&corrupted).is_err());
+
+                // A consistent row for an object that is not a legal attack
+                // target (the attacker itself) is refused by the origin.
+                let mut illegal = current.clone();
+                let own = Target::Object(attacker);
+                let reference = match &illegal.candidates[walker_index].semantic {
+                    ActionSemanticV1::ChooseAttackTarget { attacker, .. } => attacker.clone(),
+                    _ => unreachable!(),
+                };
+                illegal.candidates[walker_index].policy_action =
+                    PolicyActionV5::Surface(SurfaceAction::Action(Action::ChooseAttackTarget(own)));
+                if let ActionSemanticV1::ChooseAttackTarget { target, .. } =
+                    &mut illegal.candidates[walker_index].semantic
+                {
+                    *target = TargetRefV1::Object { object: reference };
+                }
+                assert_eq!(
+                    flat_validate_semantic_policy_pair_for_contract_v1(
+                        &cube,
+                        &illegal.candidates[walker_index]
+                    ),
+                    Ok(())
+                );
+                assert_eq!(
+                    flat_validate_origin_decision_for_contract_v1(&cube, &illegal),
+                    Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation)
+                );
+                // An extra or missing row is refused as well.
+                let mut missing = current.clone();
+                missing.candidates.truncate(1);
+                assert_eq!(
+                    flat_validate_origin_decision_for_contract_v1(&cube, &missing),
+                    Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation)
+                );
+
+                // The frozen helpers keep their exact refusal for the real
+                // candidates, and the frozen V3 mode refuses the same state.
+                assert_eq!(
+                    flat_validate_origin_decision_v1(&current, cube.game_state()),
+                    Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
+                );
+                for candidate in &current.candidates {
+                    assert_eq!(
+                        flat_validate_semantic_policy_pair_v1(candidate),
+                        Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
+                    );
+                    assert_eq!(
+                        flat_action_core_and_refs_v1(
+                            &candidate.semantic,
+                            actor.into(),
+                            0,
+                            |_, _, _, _| Ok(())
+                        ),
+                        Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
+                    );
+                }
+                let frozen = FastActorSessionV1::from_v3_fixture_state(cube.game_state().clone());
+                assert_eq!(attack_target_menu(&frozen), Some(attacker));
+                assert!(matches!(
+                    try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
+                ));
+                assert!(matches!(
+                    v3_slice(&frozen),
                     Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic)
                 ));
             }

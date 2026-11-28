@@ -412,7 +412,7 @@ fn build_with_extensions(
             None,
         );
     })?;
-    flat_validate_origin_decision_v1(&original, &session.state).inspect_err(|error| {
+    flat_validate_origin_decision_for_contract_v1(session, &original).inspect_err(|error| {
         capture_action_error_v3(session, &original, "origin_decision_relations", error, None);
     })?;
     normalize_candidates(
@@ -439,20 +439,23 @@ fn build_with_extensions(
     let mut pending_refs = Vec::<FlatUnindexedActionRefV2>::new();
     let mut resolved = Vec::<(CardStableRefV1, FlatActionObjectV2)>::new();
     for (action_index, candidate) in current.candidates.iter().enumerate() {
-        flat_validate_semantic_policy_pair_v1(candidate).inspect_err(|error| {
-            capture_action_error_v3(
-                session,
-                current,
-                "semantic_policy_pair",
-                error,
-                Some(action_index),
-            );
-        })?;
+        flat_validate_semantic_policy_pair_for_contract_v1(session, candidate).inspect_err(
+            |error| {
+                capture_action_error_v3(
+                    session,
+                    current,
+                    "semantic_policy_pair",
+                    error,
+                    Some(action_index),
+                );
+            },
+        )?;
         let action_index = u32::try_from(action_index)
             .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
         let ref_start = u32::try_from(pending_refs.len())
             .map_err(|_| FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
-        let core = flat_action_core_and_refs_v1(
+        let core = flat_action_core_and_refs_for_contract_v1(
+            session,
             &candidate.semantic,
             current.actor.into(),
             ref_start,

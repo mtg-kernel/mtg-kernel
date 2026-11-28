@@ -1784,6 +1784,16 @@ where
     Ok(core)
 }
 
+/// CubeV1-only row encodings for semantics every frozen contract refuses,
+/// then the shared frozen encoding for everything else.
+///
+/// `ChooseAttackTarget` (508.1b) reuses the `ChooseTarget` kind with one
+/// pending choice. Its first reference has the `Attacker` role rather than
+/// the `Source` role every spell or ability `ChooseTarget` row carries, so
+/// the two meanings stay distinct without a new kind id (which would widen
+/// the scorer's frozen kind vocabulary). The target is the defending player
+/// (`target_kind` 1, relative seat + 1) or one of their planeswalkers
+/// (`target_kind` 2 with a `TargetObject` reference).
 fn flat_action_core_and_refs_for_contract_v1<F>(
     session: &FastActorSessionV1,
     semantic: &ActionSemanticV1,
@@ -1799,47 +1809,42 @@ where
         &CardStableRefV1,
     ) -> Result<(), FlatActionDecisionSliceErrorV1>,
 {
-    if session.is_cube_v1() {
-        if let ActionSemanticV1::ChooseAttackTarget {
+    if let (
+        true,
+        ActionSemanticV1::ChooseAttackTarget {
             actor,
             attacker,
             target,
-        } = semantic
-        {
-            if *actor != expected_actor {
-                return Err(FlatActionDecisionSliceErrorV1::ActingPlayerMismatch);
-            }
-            let mut core = FlatActionCoreV1 {
-                kind: FlatActionKindV1::ChooseTarget,
-                remaining: 1,
-                ref_start,
-                ..FlatActionCoreV1::default()
-            };
-            let mut ref_count = 0_u16;
-            let mut push_ref = |role, reference| {
-                emit_ref(role, 0, 0, reference)?;
-                ref_count = ref_count
-                    .checked_add(1)
-                    .ok_or(FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
-                Ok(())
-            };
-            push_ref(FlatActionRefRoleV1::Attacker, attacker)?;
-            match target {
-                TargetRefV1::StackItem { .. } => {
-                    return Err(FlatActionDecisionSliceErrorV1::InvalidActionRange)
-                }
-                TargetRefV1::Player { player } => {
-                    core.target_kind = 1;
-                    core.target_player = flat_relative_seat_v1(*player, expected_actor)? + 1;
-                }
-                TargetRefV1::Object { object } => {
-                    core.target_kind = 2;
-                    push_ref(FlatActionRefRoleV1::TargetObject, object)?;
-                }
-            }
-            core.ref_len = ref_count;
-            return Ok(core);
+        },
+    ) = (session.is_cube_v1(), semantic)
+    {
+        if *actor != expected_actor {
+            return Err(FlatActionDecisionSliceErrorV1::ActingPlayerMismatch);
         }
+        let mut core = FlatActionCoreV1 {
+            kind: FlatActionKindV1::ChooseTarget,
+            remaining: 1,
+            ref_start,
+            ..FlatActionCoreV1::default()
+        };
+        match target {
+            TargetRefV1::StackItem { .. } => {
+                return Err(FlatActionDecisionSliceErrorV1::InvalidActionRange)
+            }
+            TargetRefV1::Player { player } => {
+                emit_ref(FlatActionRefRoleV1::Attacker, 0, 0, attacker)?;
+                core.target_kind = 1;
+                core.target_player = flat_relative_seat_v1(*player, expected_actor)? + 1;
+                core.ref_len = 1;
+            }
+            TargetRefV1::Object { object } => {
+                emit_ref(FlatActionRefRoleV1::Attacker, 0, 0, attacker)?;
+                emit_ref(FlatActionRefRoleV1::TargetObject, 0, 0, object)?;
+                core.target_kind = 2;
+                core.ref_len = 2;
+            }
+        }
+        return Ok(core);
     }
     flat_action_core_and_refs_v1(semantic, expected_actor, ref_start, emit_ref)
 }
@@ -2618,11 +2623,40 @@ fn flat_validate_origin_decision_akroma_inner(
         crate::rl::CommonProjectionScopeV42::ExistingV40,
     )
 }
+/// The V3 origin relation for the session's contract. Only CubeV1 admits a
+/// `ChooseAttackTarget` origin; every other mode keeps the frozen refusal.
+fn flat_validate_origin_decision_for_contract_v1(
+    session: &FastActorSessionV1,
+    current: &FastActorCurrentDecisionV1,
+) -> Result<(), FlatActionDecisionSliceErrorV1> {
+    flat_validate_origin_decision_common_scoped_cube_inner(
+        current,
+        &session.state,
+        false,
+        crate::rl::CommonProjectionScopeV42::ExistingV40,
+        session.is_cube_v1(),
+    )
+}
 fn flat_validate_origin_decision_common_scoped_v42(
     current: &FastActorCurrentDecisionV1,
     state: &crate::state::GameState,
     accept_akroma: bool,
     scope: crate::rl::CommonProjectionScopeV42,
+) -> Result<(), FlatActionDecisionSliceErrorV1> {
+    flat_validate_origin_decision_common_scoped_cube_inner(
+        current,
+        state,
+        accept_akroma,
+        scope,
+        false,
+    )
+}
+fn flat_validate_origin_decision_common_scoped_cube_inner(
+    current: &FastActorCurrentDecisionV1,
+    state: &crate::state::GameState,
+    accept_akroma: bool,
+    scope: crate::rl::CommonProjectionScopeV42,
+    accept_cube: bool,
 ) -> Result<(), FlatActionDecisionSliceErrorV1> {
     use crate::engine::Action;
     use crate::surface::SurfaceAction;
