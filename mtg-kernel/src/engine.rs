@@ -27124,6 +27124,8 @@ fn advance_step(state: &mut GameState) {
                 break;
             }
         }
+        // FlatV9 history: the turn now beginning (a skipped turn is not).
+        crate::flat_v9_history_v1::on_turn_begin_v1(state);
         next_idx = 0;
     }
 
@@ -36297,6 +36299,18 @@ fn materialize_aborted_cast_v1(
             // incarnation it started from and must retain its permission.
             object.v4.on_adventure = true;
         }
+    }
+    if cast_method == CastMethodV4::Plotted && to_zone == Zone::Exile {
+        // FlatV9 history: the restored plot keeps the stamp of the exiled
+        // incarnation the cast started from (one zone change before the
+        // stack's).
+        let zone_change_count = state.objects.get(pending.spell).zone_change_count;
+        crate::flat_v9_history_v1::on_plot_restored_v1(
+            state,
+            pending.spell,
+            zone_change_count.saturating_sub(2),
+            zone_change_count,
+        );
     }
     crate::effect::harvester_v1::record_rollback(state, pending, harvester_rollback);
     tinybones_v72::aborted(state, pending);

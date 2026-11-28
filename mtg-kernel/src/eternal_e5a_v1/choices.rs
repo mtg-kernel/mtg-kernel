@@ -459,6 +459,7 @@ pub(crate) fn finish(
             library.insert(0, found);
             // Only the searcher knows the card on top.
             state.reveal_library_position(player, player, 0);
+            crate::flat_v9_history_v1::on_tutor_placement_v1(state, player);
             Ok(false)
         }
         E5aChoiceV1::FlashPutV1 => {

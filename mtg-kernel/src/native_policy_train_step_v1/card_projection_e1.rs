@@ -3,6 +3,8 @@ use super::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub(crate) const TABLE_MAX_BYTES_V1: u64 = 64 * 1024 * 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CardSemanticsConfigV1 {
@@ -53,9 +55,8 @@ struct RowV1 {
 impl CardSemanticsConfigV1 {
     pub(crate) fn load_v1(&self) -> Result<CardSemanticsV1, String> {
         use std::io::Read;
-        const CAP: u64 = 64 * 1024 * 1024;
         let metadata = std::fs::metadata(&self.table_path).map_err(|e| e.to_string())?;
-        if !metadata.is_file() || metadata.len() > CAP {
+        if !metadata.is_file() || metadata.len() > TABLE_MAX_BYTES_V1 {
             return Err("card semantics table must be a regular file of at most 64 MiB".into());
         }
         let file = std::fs::File::open(&self.table_path).map_err(|e| e.to_string())?;
@@ -63,10 +64,10 @@ impl CardSemanticsConfigV1 {
             return Err("card semantics table must be a regular file".into());
         }
         let mut bytes = Vec::new();
-        file.take(CAP + 1)
+        file.take(TABLE_MAX_BYTES_V1 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
-        if bytes.len() as u64 > CAP {
+        if bytes.len() as u64 > TABLE_MAX_BYTES_V1 {
             return Err("card semantics table exceeds 64 MiB".into());
         }
         self.load_bytes_v1(&bytes)

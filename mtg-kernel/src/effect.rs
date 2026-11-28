@@ -15903,6 +15903,10 @@ fn drive_resumable_in_departure_scope_v1(
                                 for observer in [PlayerId::P0, PlayerId::P1] {
                                     staged.reveal_library_position(observer, player, 0);
                                 }
+                                crate::flat_v9_history_v1::on_tutor_placement_v1(
+                                    &mut staged,
+                                    player,
+                                );
                             }
                         }
                         _ => {}
