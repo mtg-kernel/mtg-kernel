@@ -8112,9 +8112,15 @@ pub(crate) fn validated_definition_owned_root_effect(
                 crate::card_def::CARD_DEFS[card_def as usize].name,
                 &root,
             );
+        // Ertai Resurrected's chosen mode resolves as its own program; stack
+        // placement already matches it against the printed modes.
+        let is_ertai_mode = crate::card_def::CARD_DEFS[card_def as usize].name
+            == "Ertai Resurrected"
+            && crate::trigger::trigger_effect_matches(card_def, &root);
         if crate::standard_creature_choices_v1::trigger_target_spec(card_def, &root).is_none()
             && !is_saga_chapter
             && !is_eternal_delayed
+            && !is_ertai_mode
             && !crate::trigger::triggers_for(card_def)
                 .iter()
                 .any(|trigger| {
