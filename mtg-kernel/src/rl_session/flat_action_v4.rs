@@ -1864,7 +1864,7 @@ mod tests {
         use crate::rl_session::pauper_london_v1::PauperMulliganModeV1;
         use crate::state::{GameState, ObjectLinkV4, TriggerUseV1, Zone};
 
-        #[derive(Default)]
+        #[derive(Debug, Default, PartialEq)]
         struct CubeScoringRows {
             objects: Vec<FlatObjectCoreV2>,
             relations: Vec<FlatRelationV2>,
@@ -1975,6 +1975,15 @@ mod tests {
         /// search ("Search your library for a card") is the pending choice,
         /// over a library none of whose cards the actor has seen before.
         fn vampiric_tutor_search_state(actor: PlayerId) -> (GameState, Vec<crate::ids::ObjectId>) {
+            vampiric_tutor_search_state_ordered(actor, false)
+        }
+
+        /// As [`vampiric_tutor_search_state`]; `swap` exchanges the library
+        /// positions of the first two (unseen, distinct) cards.
+        fn vampiric_tutor_search_state_ordered(
+            actor: PlayerId,
+            swap: bool,
+        ) -> (GameState, Vec<crate::ids::ObjectId>) {
             use crate::engine::{advance_until_decision, step, Action, Decision};
             let mut state = ready_state_for(actor);
             state.active_player = actor;
@@ -1983,6 +1992,9 @@ mod tests {
                 .into_iter()
                 .map(|name| put(&mut state, actor, name, Zone::Library))
                 .collect();
+            if swap {
+                state.players[actor.index()].library.swap(0, 1);
+            }
             let tutor = put(&mut state, actor, "Vampiric Tutor", Zone::Hand);
             state.players[actor.index()].mana_pool[crate::mana::ManaColor::B.pool_index()] += 1;
             step(&mut state, Action::CastSpell(tutor)).unwrap();
@@ -2070,6 +2082,111 @@ mod tests {
             }
         }
 
+        fn scored_rows(session: &FastActorSessionV1) -> CubeScoringRows {
+            let mut rows = CubeScoringRows::default();
+            session
+                .encode_current_flat_scoring_decision_owned_v4(
+                    expected(session),
+                    &mut FlatDecisionEncoderV4::default(),
+                    &mut rows.buffers(),
+                )
+                .unwrap();
+            rows
+        }
+
+        /// The chooser's view of a search is positionless: swapping two
+        /// unseen library cards changes neither the observation (including
+        /// the pending choice's legal-target order) nor the scorer rows.
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_tutor_search_inputs_do_not_reveal_library_order() {
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let sessions = [false, true].map(|swap| {
+                    let (state, _) = vampiric_tutor_search_state_ordered(actor, swap);
+                    FastActorSessionV1::from_cube_v1_fixture_state(state)
+                });
+                assert_ne!(
+                    sessions[0].state.players[actor.index()].library,
+                    sessions[1].state.players[actor.index()].library
+                );
+                let observations = sessions.each_ref().map(|session| {
+                    session
+                        .flat_policy_observation_v4(expected(session))
+                        .unwrap()
+                });
+                assert_eq!(observations[0], observations[1]);
+                assert_eq!(
+                    sessions[0].current.as_ref().unwrap().candidates,
+                    sessions[1].current.as_ref().unwrap().candidates
+                );
+                assert_eq!(scored_rows(&sessions[0]), scored_rows(&sessions[1]));
+            }
+        }
+
+        /// Thassa's Oracle looks at the top cards without searching: even
+        /// with its look knowledge removed, CubeV1 grants no decision-local
+        /// library, so the decision refuses exactly as the frozen route does.
+        #[cfg(feature = "eternal-fixtures")]
+        #[test]
+        fn cube_non_search_library_choice_gains_no_decision_local_library() {
+            use crate::engine::{advance_until_decision, step, Action, Decision};
+            for actor in [PlayerId::P0, PlayerId::P1] {
+                let mut state = ready_state_for(actor);
+                state.active_player = actor;
+                state.priority_player = actor;
+                for name in ["Island", "Sol Ring", "Brainstorm", "Island"] {
+                    put(&mut state, actor, name, Zone::Library);
+                }
+                let oracle = put(&mut state, actor, "Thassa's Oracle", Zone::Hand);
+                state.players[actor.index()].mana_pool[crate::mana::ManaColor::U.pool_index()] += 2;
+                step(&mut state, Action::CastSpell(oracle)).unwrap();
+                let mut reached = false;
+                for _ in 0..32 {
+                    match advance_until_decision(&mut state) {
+                        Decision::ChooseEffectTargets { player, .. } => {
+                            assert_eq!(player, actor);
+                            reached = true;
+                            break;
+                        }
+                        Decision::CastSpellOrPass { .. } => step(&mut state, Action::Pass).unwrap(),
+                        Decision::OrderTriggers { pending, .. } => step(
+                            &mut state,
+                            Action::OrderTriggers((0..pending.len()).collect()),
+                        )
+                        .unwrap(),
+                        other => panic!("Thassa's Oracle fixture reached {other:?}"),
+                    }
+                }
+                assert!(reached, "Thassa's Oracle never offered its look");
+                assert!(matches!(
+                    &state.engine.pending_effect.as_ref().unwrap().choice,
+                    Some(crate::effect::PendingEffectChoice::SelectTargets {
+                        purpose: crate::effect::EffectTargetSelectionPurpose::EternalV1 { choice },
+                        ..
+                    }) if !choice.library_search()
+                ));
+                for observer in 0..2 {
+                    state.library_knowledge[observer][actor.index()].clear();
+                }
+                assert_eq!(
+                    crate::rl::policy_observation_extensions_cube_v1(&state, actor)
+                        .unwrap()
+                        .decision_local_library,
+                    None
+                );
+                let cube = FastActorSessionV1::from_cube_v1_fixture_state(state.clone());
+                let frozen = FastActorSessionV1::from_v3_fixture_state(state);
+                assert!(matches!(
+                    try_encoded_v4(&cube),
+                    Err(FlatActionDecisionSliceErrorV1::HiddenActionReference)
+                ));
+                assert!(matches!(
+                    try_encoded_v4(&frozen),
+                    Err(FlatActionDecisionSliceErrorV1::HiddenActionReference)
+                ));
+            }
+        }
+
         #[cfg(feature = "eternal-fixtures")]
         #[test]
         fn cube_doomsday_pile_keeps_public_graveyard_rows_after_its_library_and_v3_still_refuses() {
@@ -2149,6 +2266,84 @@ mod tests {
                     expected(&cube).legal_action_count
                 );
                 assert_full_v4_scoring(&cube);
+
+                // Pick the second Island, then a graveyard card, then the
+                // first offered card three times. Every intermediate decision
+                // keeps the selected prefix, encodes on both the V3 cache and
+                // V4 slice, and scores; the pile ends in pick order.
+                let target_id = |session: &FastActorSessionV1, index: usize| match &session
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .candidates[index]
+                    .semantic
+                {
+                    ActionSemanticV1::ChooseEffectTarget {
+                        target: crate::rl::TargetRefV1::Object { object },
+                        ..
+                    } => object.clone(),
+                    other => panic!("Doomsday candidate {other:?}"),
+                };
+                let mut cube = cube;
+                let mut picks = Vec::new();
+                for pick in 0..5 {
+                    let count = cube.current.as_ref().unwrap().candidates.len();
+                    let index = match pick {
+                        0 => (0..count)
+                            .filter(|&index| {
+                                let object = target_id(&cube, index);
+                                object.zone == Zone::Library
+                                    && cube
+                                        .state
+                                        .objects
+                                        .get(crate::ids::ObjectId(object.arena_id))
+                                        .name
+                                        == "Island"
+                            })
+                            .nth(1)
+                            .expect("two Islands in the pile"),
+                        1 => (0..count)
+                            .find(|&index| target_id(&cube, index).zone == Zone::Graveyard)
+                            .unwrap(),
+                        _ => 0,
+                    };
+                    picks.push(target_id(&cube, index).arena_id);
+                    let decision = expected(&cube);
+                    cube.step(
+                        decision.episode_id,
+                        decision.step,
+                        u32::try_from(index).unwrap(),
+                    )
+                    .unwrap();
+                    if pick < 4 {
+                        let decision = expected(&cube);
+                        let search =
+                            crate::rl::policy_observation_extensions_cube_v1(&cube.state, actor)
+                                .unwrap()
+                                .decision_local_library
+                                .expect("the pile is still decision-local");
+                        assert!(picks
+                            .iter()
+                            .filter(|&&pick| {
+                                cube.state.objects.get(crate::ids::ObjectId(pick)).zone
+                                    == Zone::Library
+                            })
+                            .all(|&pick| search
+                                .cards
+                                .iter()
+                                .any(|card| card.stable.arena_id == pick)));
+                        cube.flat_policy_observation_v3(decision).unwrap();
+                        try_encoded_v4(&cube).unwrap();
+                        assert_full_v4_scoring(&cube);
+                    }
+                }
+                assert!(cube.state.engine.pending_effect.is_none());
+                let pile: Vec<u32> = cube.state.players[actor.index()]
+                    .library
+                    .iter()
+                    .map(|id| id.0)
+                    .collect();
+                assert_eq!(pile, picks);
             }
         }
 
