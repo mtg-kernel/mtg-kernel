@@ -527,3 +527,74 @@ fn flat_v9_parity_cases_for_python() {
         .unwrap();
     }
 }
+
+/// The FlatV9 policy (`into_flat_v9_v1`): it scores a charged state FlatV8
+/// refuses, records the FlatV9 tensor its own tensorizer gives, replays that
+/// tensor to the same scores, and a charge counter moves its outputs once
+/// the new columns are live.
+#[test]
+fn flat_v9_policy_scores_and_replays_relaxed_states() {
+    use crate::sideboard_play_policy_v1::FreshLineageGenerationV1;
+    use crate::sideboard_play_policy_v1::FrozenPlayPolicyV1;
+    let live = |scale: f32| {
+        let object: Vec<f32> = (0..crate::native_policy_value_net_v1::HIDDEN_DIM_V1
+            * FLAT_V9_OBJECT_EXTRA_DIM_V1)
+            .map(|i| scale * ((i % 7) as f32 - 3.0))
+            .collect();
+        let state: Vec<f32> = (0..crate::native_policy_value_net_v1::HIDDEN_DIM_V1
+            * FLAT_V9_STATE_EXTRA_DIM_V1)
+            .map(|i| scale * ((i % 5) as f32 - 2.0))
+            .collect();
+        FrozenPlayPolicyV1::training_fixture_v4()
+            .into_flat_v8_v1()
+            .unwrap()
+            .into_flat_v9_v1(&object, &state)
+            .unwrap()
+    };
+    for actor in [PlayerId::P0, PlayerId::P1] {
+        let (plain, _) = charge_fixture_v1(actor, 0);
+        let (charged, _) = charge_fixture_v1(actor, 3);
+        let mut v8 = FrozenPlayPolicyV1::training_fixture_v4()
+            .into_flat_v8_v1()
+            .unwrap();
+        assert!(v8.score_fast_session_v1(&charged).is_err());
+        let mut policy = live(0.05);
+        assert_eq!(
+            policy.feature_identity_v1().feature_contract_digest,
+            crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9
+        );
+        let charged_scores = policy.score_fast_session_v1(&charged).unwrap();
+        let recorded = policy
+            .last_scored_training_tensor_v4()
+            .unwrap()
+            .common
+            .clone();
+        let pairs = policy.last_scored_pairing_v8().unwrap().to_vec();
+        let (_, direct, direct_pairs) = v9_tensors_v1(&charged).unwrap();
+        assert_eq!(recorded, direct);
+        assert_eq!(pairs, direct_pairs);
+        let replayed = policy
+            .score_replay_tensor_ref_v1(FreshLineageGenerationV1::V4, &recorded, &pairs, None)
+            .unwrap();
+        assert_eq!(
+            replayed
+                .logits
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            charged_scores
+                .logits
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(replayed.value.to_bits(), charged_scores.value.to_bits());
+        let plain_scores = policy.score_fast_session_v1(&plain).unwrap();
+        assert_ne!(plain_scores.value.to_bits(), charged_scores.value.to_bits());
+        // A FlatV9 policy converts once and only from FlatV8.
+        assert!(live(0.0).into_flat_v8_v1().is_err());
+        assert!(FrozenPlayPolicyV1::training_fixture_v4()
+            .into_flat_v9_v1(&[], &[])
+            .is_err());
+    }
+}

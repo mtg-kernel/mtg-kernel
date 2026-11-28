@@ -136,18 +136,29 @@ impl NativePolicyValueNetV1 {
         )
     }
 
+    /// The FlatV9 input config: the FlatV9 net's own; any other net's
+    /// carries widths no FlatV9 view has, so its views are refused.
+    pub(crate) fn feature_transfer_config_v9(&self) -> NativePolicyValueModelConfigV1 {
+        if self.is_v9_cube_v1() {
+            return self.config;
+        }
+        use crate::native_flat_tensorizer_v9::*;
+        NativePolicyValueModelConfigV1 {
+            feature_schema_version: FEATURE_SCHEMA_VERSION_V9,
+            feature_registry_version: FEATURE_REGISTRY_VERSION_V9,
+            feature_contract_digest: FEATURE_CONTRACT_DIGEST_V9,
+            feature_encoding_digest: FEATURE_ENCODING_DIGEST_V9,
+            ..self.config
+        }
+    }
+
     /// The reference forward over FlatV9 inputs (pairing relation included).
     pub(crate) fn forward_feature_transfer_v9_mode(
         &self,
         encoded: NativeEncodedDecisionViewV1<'_>,
         activation_mode: ForwardActivationModeV1,
     ) -> Result<NativePolicyValueOutputV1, NativePolicyValueErrorV1> {
-        if !self.is_v9_cube_v1() {
-            return Err(NativePolicyValueErrorV1::SchemaMismatch(
-                "model_architecture_version",
-            ));
-        }
-        let counts = encoded.validate(self.config)?;
+        let counts = encoded.validate(self.feature_transfer_config_v9())?;
         self.forward_validated_rows_v1(encoded, counts, None, activation_mode)
     }
 }
