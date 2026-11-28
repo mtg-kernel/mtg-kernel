@@ -2109,17 +2109,16 @@ mod tests {
             panic!("the session never reached the attack-target prompt");
         }
 
+        type V3Rows = (
+            FlatActionDecisionSliceV3,
+            Vec<FlatActionCoreV1>,
+            Vec<FlatActionRefV2>,
+            Vec<FlatActionObjectV2>,
+        );
+
         fn v3_slice(
             session: &FastActorSessionV1,
-        ) -> Result<
-            (
-                FlatActionDecisionSliceV3,
-                Vec<FlatActionCoreV1>,
-                Vec<FlatActionRefV2>,
-                Vec<FlatActionObjectV2>,
-            ),
-            FlatActionDecisionSliceErrorV1,
-        > {
+        ) -> Result<V3Rows, FlatActionDecisionSliceErrorV1> {
             let mut actions = vec![FlatActionCoreV1::default(); 16];
             let mut refs = vec![FlatActionRefV2::default(); 64];
             let mut objects = vec![FlatActionObjectV2::default(); 64];
