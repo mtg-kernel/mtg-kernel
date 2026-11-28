@@ -790,6 +790,9 @@ pub(super) fn teamwork_search(
     None
 }
 
+/// The definition-only selection, without this cast's source-aware taxes and
+/// reductions. Casts quote `selected_spell_mana_costs_for_source_v1`.
+#[cfg(all(test, not(feature = "standard-magezero-fixtures")))]
 pub(super) fn selected_spell_mana_costs_v1(
     definition: &card_def::CardDef,
     method: CastMethodV4,

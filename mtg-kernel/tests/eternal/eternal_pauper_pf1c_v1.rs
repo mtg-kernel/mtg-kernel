@@ -6377,3 +6377,159 @@ fn public_escape_kappa_cannot_improvise_with_its_only_blue_source() {
     assert!(state.objects.get(seat).tapped && state.objects.get(bauble).tapped);
     assert_eq!(state.players[0].mana_pool, [0; 6]);
 }
+
+/// Casts `spell` for its ordinary convoke cost through the public menu and
+/// returns the tap selection it opens.
+fn ordinary_convoke_cast(state: &mut GameState, spell: ObjectId) -> Decision {
+    use mtg_kernel::engine::CastMode;
+    cast(state, spell, &[]);
+    if let Decision::ChooseCastMode { options, .. } = next(state) {
+        assert!(options.contains(&CastMode::Alternative), "{options:?}");
+        tap_menu_action(state, Action::ChooseCastMode(CastMode::Alternative));
+    }
+    let decision = next(state);
+    assert!(
+        matches!(decision, Decision::ChooseEffectTargets { .. }),
+        "{decision:?}"
+    );
+    assert_ne!(
+        state
+            .engine
+            .pending_cast
+            .as_ref()
+            .unwrap()
+            .source_contract
+            .cast_method,
+        mtg_kernel::state::CastMethodV4::Escape
+    );
+    decision
+}
+
+/// The chosen tappers can neither finish nor be restored as finished while
+/// they and the floating mana underpay the quoted total.
+fn assert_tap_underpayment_refused(state: &GameState) {
+    let mut probe = state.clone();
+    assert!(matches!(
+        next(&mut probe),
+        Decision::ChooseEffectTargets {
+            can_finish: false,
+            ..
+        }
+    ));
+    assert!(engine::step(&mut probe, Action::FinishEffectSelection).is_err());
+    let mut forged = state.clone();
+    forged
+        .engine
+        .pending_cast
+        .as_mut()
+        .unwrap()
+        .convoke_finished = true;
+    assert!(public_observation(&forged).is_err());
+}
+
+#[test]
+fn ordinary_convoke_tappers_pay_the_gloom_taxed_total() {
+    // Gloom: white spells cost {3} more, so Martyr's Soul's convoke
+    // {2}{W} costs {5}{W} for the offer, the tappers and the final payment.
+    let mut state = plains();
+    mtg_kernel::rl::enable_public_shroud_v1(&mut state);
+    put(&mut state, P1, "Gloom", Zone::Battlefield);
+    let soul = put(&mut state, P0, "Martyr's Soul", Zone::Hand);
+    let first = put(&mut state, P0, "Thraben Inspector", Zone::Battlefield);
+    let second = put(&mut state, P0, "Thraben Inspector", Zone::Battlefield);
+    pool(&mut state, P0, &[ManaColor::W], 2);
+    assert!(!castable(&mut state, soul), "two creatures and three mana");
+    pool(&mut state, P0, &[], 1);
+    let Decision::ChooseEffectTargets {
+        min_targets,
+        max_targets,
+        can_finish,
+        legal_targets,
+        ..
+    } = ordinary_convoke_cast(&mut state, soul)
+    else {
+        unreachable!()
+    };
+    assert_eq!((min_targets, max_targets), (1, 6));
+    assert!(!can_finish);
+    assert_eq!(
+        legal_targets,
+        [Target::Object(first), Target::Object(second)]
+    );
+    tap_menu_action(
+        &mut state,
+        Action::ChooseEffectTarget(Target::Object(first)),
+    );
+    // One creature and four mana pay only five of the six.
+    assert_tap_underpayment_refused(&state);
+    let mut restored: GameState =
+        serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+    assert_eq!(public_observation(&restored), public_observation(&state));
+    tap_menu_action(
+        &mut restored,
+        Action::ChooseEffectTarget(Target::Object(second)),
+    );
+    tap_menu_action(&mut restored, Action::FinishEffectSelection);
+    next(&mut restored);
+    assert!(restored.engine.pending_cast.is_none());
+    assert_eq!(zone(&restored, soul), Zone::Stack);
+    assert!(restored.objects.get(first).tapped && restored.objects.get(second).tapped);
+    assert_eq!(restored.players[0].mana_pool, [0; 6], "paid {{5}}{{W}}");
+    settle_first(&mut restored);
+    assert_eq!(zone(&restored, soul), Zone::Battlefield);
+}
+
+#[test]
+fn ordinary_convoke_from_the_library_uses_bilbo_and_trinisphere_totals() {
+    // Future Sight casts Martyr's Soul from the library. Bilbo makes its
+    // convoke {2}{W} cost {1}{W}; Trinisphere then raises it back to three.
+    for trinisphere in [false, true] {
+        let mut state = plains();
+        mtg_kernel::rl::enable_public_shroud_v1(&mut state);
+        put(&mut state, P0, "Future Sight", Zone::Battlefield);
+        let bilbo = put(
+            &mut state,
+            P0,
+            "Bilbo, Thief in the Night",
+            Zone::Battlefield,
+        );
+        if trinisphere {
+            put(&mut state, P0, "Trinisphere", Zone::Battlefield);
+        }
+        let inspector = put(&mut state, P0, "Thraben Inspector", Zone::Battlefield);
+        let soul = put(&mut state, P0, "Martyr's Soul", Zone::Library);
+        pool(&mut state, P0, &[ManaColor::W], 0);
+        let Decision::ChooseEffectTargets {
+            max_targets,
+            can_finish,
+            ..
+        } = ordinary_convoke_cast(&mut state, soul)
+        else {
+            unreachable!()
+        };
+        assert_eq!(max_targets, if trinisphere { 3 } else { 2 });
+        assert!(!can_finish);
+        assert!(engine::step(&mut state.clone(), Action::FinishEffectSelection).is_err());
+        tap_menu_action(
+            &mut state,
+            Action::ChooseEffectTarget(Target::Object(inspector)),
+        );
+        if trinisphere {
+            // The inspector and the floating {W} pay two of the three.
+            assert_tap_underpayment_refused(&state);
+            tap_menu_action(
+                &mut state,
+                Action::ChooseEffectTarget(Target::Object(bilbo)),
+            );
+        }
+        tap_menu_action(&mut state, Action::FinishEffectSelection);
+        next(&mut state);
+        assert!(state.engine.pending_cast.is_none());
+        assert_eq!(zone(&state, soul), Zone::Stack);
+        assert!(state.objects.get(inspector).tapped);
+        assert_eq!(state.objects.get(bilbo).tapped, trinisphere);
+        assert_eq!(state.players[0].mana_pool, [0; 6]);
+        settle_first(&mut state);
+        assert_eq!(zone(&state, soul), Zone::Battlefield);
+    }
+}

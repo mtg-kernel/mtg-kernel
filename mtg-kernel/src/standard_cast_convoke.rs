@@ -67,19 +67,7 @@ fn teamwork_payment(
     p: &PendingCast,
     chosen: &[EffectObjectBinding],
 ) -> Option<SpellManaPaymentV1> {
-    let def = &card_def::CARD_DEFS[state.objects.get(p.spell).card_def as usize];
-    let s = spell_costs_v1::selected_spell_mana_costs_for_source_v1(
-        p.spell,
-        def,
-        (
-            CastMethodV4::Alternative,
-            p.kicked == Some(true),
-            p.mode_chosen.unwrap_or(0),
-        ),
-        &p.targets_chosen,
-        p.controller,
-        state,
-    )?;
+    let s = selected(state, p)?;
     let modifiers = spell_cost_generic_modifiers_v1(state, s.types, p.controller);
     let objects = chosen.iter().map(|b| b.object).collect::<Vec<_>>();
     s.teamwork_payment(
@@ -122,57 +110,33 @@ fn teamwork_can_complete(
     )
     .is_some()
 }
+/// The source-aware cost of this cast (CR 601.2f): the same selection the
+/// offer and the final payment quote, so taxes such as Gloom, Bilbo's
+/// outside-hand reduction and Trinisphere's minimum apply to the tappers.
 fn selected(
     state: &GameState,
     p: &PendingCast,
 ) -> Option<spell_costs_v1::SelectedSpellManaCostsV1> {
-    let def = &card_def::CARD_DEFS[state.objects.get(p.spell).card_def as usize];
-    if escape(p) {
-        return spell_costs_v1::selected_spell_mana_costs_for_source_v1(
-            p.spell,
-            def,
-            (
-                CastMethodV4::Escape,
-                p.kicked == Some(true),
-                p.mode_chosen.unwrap_or(0),
-            ),
-            &p.targets_chosen,
-            p.controller,
-            state,
-        );
-    }
-    spell_costs_v1::selected_spell_mana_costs_v1(
-        def,
-        CastMethodV4::Alternative,
-        p.kicked == Some(true),
-        p.mode_chosen.unwrap_or(0),
+    let method = if escape(p) {
+        CastMethodV4::Escape
+    } else {
+        CastMethodV4::Alternative
+    };
+    spell_costs_v1::selected_spell_mana_costs_for_source_v1(
+        p.spell,
+        &card_def::CARD_DEFS[state.objects.get(p.spell).card_def as usize],
+        (method, p.kicked == Some(true), p.mode_chosen.unwrap_or(0)),
         &p.targets_chosen,
         p.controller,
         state,
     )
 }
+/// The total the chosen tappers and mana pay, fixed before payment.
 fn cost(state: &GameState, p: &PendingCast) -> Option<(Vec<mana::Pip>, u32, bool)> {
     let s = selected(state, p)?;
     let (increase, reduction) = spell_cost_generic_modifiers_v1(state, s.types, p.controller);
-    if escape(p) {
-        let (pips, generic) =
-            s.total_mana_cost(p.selected_x_v59().unwrap_or(0), state, increase, reduction);
-        return Some((pips, generic, s.types.contains(&CardType::Creature)));
-    }
-    let pips = s
-        .costs
-        .iter()
-        .flat_map(|c| c.pips.iter().copied())
-        .collect();
-    let generic = s
-        .costs
-        .iter()
-        .map(|c| {
-            u32::from(c.generic) + u32::from(c.x_count) * u32::from(p.selected_x_v59().unwrap_or(0))
-        })
-        .sum::<u32>()
-        .saturating_add(increase)
-        .saturating_sub(reduction.saturating_add(s.own_generic_reduction));
+    let (pips, generic) =
+        s.total_mana_cost(p.selected_x_v59().unwrap_or(0), state, increase, reduction);
     Some((pips, generic, s.types.contains(&CardType::Creature)))
 }
 /// Improvise (Kappa Cannoneer) taps artifacts, each for one generic mana.
