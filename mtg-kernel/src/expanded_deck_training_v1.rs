@@ -2822,6 +2822,13 @@ fn load_learner_from_source_bytes_v1(
     remember: CacheRememberV1,
 ) -> Result<UncachedLearnerLoadV1, String> {
     check_net8_learner_source_v1(source)?;
+    if flat_v9_requested_v1(source)? {
+        let pin = source
+            .checkpoint
+            .as_ref()
+            .ok_or("a FlatV9 source requires its V9 checkpoint")?;
+        return load_flat_v9_uncached_v1(source, pin, bytes, inputs);
+    }
     if flat_v8_requested_v1(source)? {
         let pin = source
             .checkpoint
@@ -2881,6 +2888,14 @@ fn load_train_policy_and_identity_v1(
     String,
 > {
     check_net8_learner_source_v1(source)?;
+    if flat_v9_requested_v1(source)? {
+        let pin = source
+            .checkpoint
+            .as_ref()
+            .ok_or("a FlatV9 source requires its V9 checkpoint")?;
+        let loaded = load_flat_v9_uncached_v1(source, pin, bytes, None)?;
+        return Ok((loaded.policy, loaded.identity, loaded.transfer));
+    }
     if flat_v8_requested_v1(source)? {
         let pin = source
             .checkpoint
@@ -2981,6 +2996,62 @@ fn load_update_identity_from_source_bytes_v1(
         load_nonflat_uncached_v1(source, bytes, Some(inputs), CacheRememberV1::PolicyOnly)?
     };
     Ok((loaded.identity, loaded.state.loaded_card_semantics))
+}
+
+/// A FlatV9 checkpoint: the V4 import, converted to the V8 inclusion net and
+/// then the FlatV9 net with zero new columns, then the checkpoint's own
+/// parameters, moments and step restored over it. The source cache is not
+/// used for FlatV9 (its identity key is FlatV8's).
+#[inline(never)]
+fn load_flat_v9_uncached_v1(
+    source: &ExpandedModelSourceV1,
+    pin: &PinnedFileV1,
+    bytes: &[u8],
+    inputs: Option<&CheckpointInputExpectationV1<'_>>,
+) -> Result<UncachedLearnerLoadV1, String> {
+    use crate::flat_policy_v6::{FLAT_V9_OBJECT_EXTRA_DIM_V1, FLAT_V9_STATE_EXTRA_DIM_V1};
+    use crate::native_policy_value_net_v1::HIDDEN_DIM_V1;
+    ensure(
+        checkpoint_feature_contract_v1(pin)?
+            == crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
+        "a FlatV9 source requires a checkpoint with the FlatV9 identity",
+    )?;
+    let import_only = ExpandedModelSourceV1 {
+        feature_transfer: FrozenPlayObservationTransferV3 {
+            expected_feature_contract_digest: FEATURE_CONTRACT_DIGEST_V4.into(),
+            expected_feature_encoding_digest: FEATURE_ENCODING_DIGEST_V4.into(),
+        },
+        checkpoint: None,
+        ..source.clone()
+    };
+    let (policy, _, context) = load_train_policy_and_identity_v1(&import_only, bytes)?;
+    ensure(
+        context.is_none(),
+        "a FlatV9 checkpoint resumes only an ordinary source",
+    )?;
+    let mut policy = policy.into_flat_v8_v1()?.into_flat_v9_v1(
+        &vec![0.0; HIDDEN_DIM_V1 * FLAT_V9_OBJECT_EXTRA_DIM_V1],
+        &vec![0.0; HIDDEN_DIM_V1 * FLAT_V9_STATE_EXTRA_DIM_V1],
+    )?;
+    let model = policy.training_model_v3();
+    let record = read_checkpoint_record_v1(pin)?;
+    let saved = parse_ordinary_checkpoint_borrowed_v1(&record, policy.identity_v1())?;
+    if let Some(inputs) = inputs {
+        inputs.validate_v1(
+            &saved.trajectories,
+            saved.learning_rate_bits,
+            saved.value_coefficient_bits,
+        )?;
+    }
+    let state = restore_checkpoint_state_v1(&saved, &mut policy, model)?;
+    let identity = inference_identity_v1(source, &policy, &state)?;
+    Ok(UncachedLearnerLoadV1 {
+        policy,
+        state,
+        identity,
+        transfer: None,
+        verifiable_kind: None,
+    })
 }
 
 #[inline(never)]
@@ -3326,6 +3397,22 @@ fn checkpoint_feature_contract_v1(pin: &PinnedFileV1) -> Result<String, String> 
     }
     let probe: IdentityProbeV1 = read_checkpoint_metadata_v1(pin)?;
     Ok(probe.feature_contract_digest)
+}
+
+/// Whether `source` declares FlatV9 (the Cube contract, M2 task T6): both
+/// expected feature digests are FlatV9's. A half-V9 declaration is refused.
+fn flat_v9_requested_v1(source: &ExpandedModelSourceV1) -> Result<bool, String> {
+    use crate::native_flat_tensorizer_v9::{
+        FEATURE_CONTRACT_DIGEST_V9, FEATURE_ENCODING_DIGEST_V9,
+    };
+    let transfer = &source.feature_transfer;
+    let contract = transfer.expected_feature_contract_digest == FEATURE_CONTRACT_DIGEST_V9;
+    let encoding = transfer.expected_feature_encoding_digest == FEATURE_ENCODING_DIGEST_V9;
+    ensure(
+        contract == encoding,
+        "FlatV9 requires both V9 feature digests",
+    )?;
+    Ok(contract)
 }
 
 /// Whether `source` declares FlatV8 (the V8 inclusion contract): both
@@ -4080,8 +4167,11 @@ fn collect_episode_hooked_with_options_v1(
                     // FlatV8 rows also record their pairing relation.
                     let bits = if !record_tensor {
                         TensorBitsV1::empty_v1()
-                    } else if acting.feature_identity_v1().feature_contract_digest
-                        == crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8
+                    } else if [
+                        crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8,
+                        crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
+                    ]
+                    .contains(&acting.feature_identity_v1().feature_contract_digest)
                     {
                         TensorBitsV1::from_tensor_v8(
                             &tensor.common,
@@ -6868,6 +6958,7 @@ fn execute_update_inner_v1(
     if [
         crate::native_flat_tensorizer_v7::FEATURE_CONTRACT_DIGEST_V7,
         crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8,
+        crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
     ]
     .contains(&policy.feature_identity_v1().feature_contract_digest)
     {
@@ -7020,6 +7111,9 @@ fn execute_update_inner_v1(
     // V8 inclusion net's V4-generation input config is FlatV8's.
     let flat_v8 = policy.feature_identity_v1().feature_contract_digest
         == crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8;
+    // FlatV9 rows likewise, under the FlatV9 net's config.
+    let flat_v9 = policy.feature_identity_v1().feature_contract_digest
+        == crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9;
     // Ordinary CPU GAE updates recompute every learner row's forward tape and
     // verify every logit and value bit (`validate_forward_output_bits_v1`)
     // before mutating model or optimizer state. Deferring learner-row replay in
@@ -7041,6 +7135,7 @@ fn execute_update_inner_v1(
         && semantics.is_none()
         && crate::deterministic_math_v1::verify_pinned_mxcsr_state_v1().is_ok()
         && (flat_v8
+            || flat_v9
             || !episodes.iter().any(|episode| {
                 episode.decisions.iter().any(|row| {
                     row.actor == episode.episode.learner_seat
@@ -7090,7 +7185,12 @@ fn execute_update_inner_v1(
             group
                 .iter()
                 .map(|(row, t)| NativePolicySubstepV1 {
-                    forward: NativePolicyForwardInputV1::Encoded(Box::new(if flat_v8 {
+                    forward: NativePolicyForwardInputV1::Encoded(Box::new(if flat_v9 {
+                        crate::native_flat_tensorizer_v9::encoded_decision_view_v9(
+                            t,
+                            &row.tensor.pairing_node_indices,
+                        )
+                    } else if flat_v8 {
                         crate::native_flat_tensorizer_v8::encoded_decision_view_v8(
                             t,
                             &row.tensor.pairing_node_indices,

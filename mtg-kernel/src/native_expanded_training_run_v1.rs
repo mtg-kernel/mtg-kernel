@@ -1995,6 +1995,10 @@ fn flat_identity_declared_v1(
             crate::native_flat_tensorizer_v8::FEATURE_CONTRACT_DIGEST_V8,
             crate::native_flat_tensorizer_v8::FEATURE_ENCODING_DIGEST_V8,
         ),
+        (
+            crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9,
+            crate::native_flat_tensorizer_v9::FEATURE_ENCODING_DIGEST_V9,
+        ),
     ]
     .into_iter()
     .find(|(contract, encoding)| {
