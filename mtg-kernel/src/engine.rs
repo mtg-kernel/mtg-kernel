@@ -3199,6 +3199,32 @@ fn object_in_any_zone_list(state: &GameState, object: ObjectId) -> bool {
         || state.stack.iter().any(|item| item.source == object)
 }
 
+/// Whether history publishes `spell`'s current incarnation: a `SpellCast`
+/// naming it after its last recorded move (`ZoneChange` or `Draw`). A cast
+/// announcement moves the card to the stack without a move event, and
+/// every departure from the stack records one, so an earlier incarnation's
+/// `SpellCast` always precedes a later move. Same anchor as
+/// `cast_identity_v1::archived_battlefield_cast`.
+fn current_stack_incarnation_published(state: &GameState, spell: ObjectId) -> bool {
+    let mut published = false;
+    for (_, event) in state.engine.event_history.of_kinds_v2(&[
+        EventKindV1::ZoneChange,
+        EventKindV1::Draw,
+        EventKindV1::SpellCast,
+    ]) {
+        match event {
+            CommittedEvent::ZoneChange { object, .. } if *object == spell => published = false,
+            CommittedEvent::Draw {
+                object: Some(drawn),
+                ..
+            } if *drawn == spell => published = false,
+            CommittedEvent::SpellCast { spell: cast, .. } if *cast == spell => published = true,
+            _ => {}
+        }
+    }
+    published
+}
+
 /// Authenticates a physical stack spell's unique `PublishedCastIdentityV1`
 /// receipt and checks `e7b.casters` against the receipt's controller (caster).
 /// Returns `Ok(Some((receipt_index, caster)))` when published, `Ok(None)` when
@@ -3228,6 +3254,14 @@ fn authenticated_spell_cast_receipt(
             })
         {
             return Err("spell caster record disagrees with unpublished spell controller".into());
+        }
+        // Issue #1030: a receipt retargeted to another stack item must not
+        // make a published spell read as unpublished. Leaving the stack
+        // records a move, so a `SpellCast` naming the source after its last
+        // recorded move published its current incarnation, and that
+        // publication wrote this spell's receipt directly before it.
+        if current_stack_incarnation_published(state, item.source) {
+            return Err("published spell lost its cast identity receipt".into());
         }
         return Ok(None);
     };
@@ -43096,6 +43130,22 @@ mod tests {
             );
             assert_eq!(forged, before, "{label}");
         }
+
+        // The genuine receipt retargeted to another stack item, without any
+        // placeholder, does not make the published spell unpublished.
+        let mut retargeted = state.clone();
+        let CommittedEvent::PublishedCastIdentityV1 { receipt } =
+            &mut retargeted.engine.event_history[receipt_at]
+        else {
+            unreachable!();
+        };
+        receipt.stack_item_id = crate::ids::StackItemId(receipt.stack_item_id.0 + 100);
+        let before = retargeted.clone();
+        assert!(
+            validate_spell_stack_source(&retargeted, retargeted.stack.last().unwrap()).is_err()
+        );
+        assert!(step(&mut retargeted, Action::ChooseSpellCopyPayment(false)).is_err());
+        assert_eq!(retargeted, before);
 
         // A template placeholder for the spell's printing, or for another
         // printing (an unobserved reference's), is accepted.
