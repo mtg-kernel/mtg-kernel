@@ -2248,8 +2248,9 @@ mod tests {
                 assert_eq!(cube.game_state(), &before);
 
                 // The second attacker attacks the player. Combat then runs
-                // with the recorded targets: the first 7/7 kills the
-                // three-loyalty Jace and only the second damages the player.
+                // with the recorded targets: the first 4/4 Myr Enforcer
+                // kills the three-loyalty Jace and only the second damages
+                // the player (both on the player would cost 8).
                 let defender = actor.opponent();
                 let life = cube.game_state().players[defender.index()].life;
                 cube.consume_current_flat_action_slice_v3(second_slice.binding, player_index)
@@ -2279,7 +2280,7 @@ mod tests {
                 }
                 let state = cube.game_state();
                 assert_eq!(state.objects.get(walker).zone, Zone::Graveyard);
-                assert_eq!(state.players[defender.index()].life, life - 7);
+                assert_eq!(state.players[defender.index()].life, life - 4);
                 for attacker in attackers {
                     assert_eq!(state.objects.get(attacker).zone, Zone::Battlefield);
                 }
