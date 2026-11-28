@@ -60,13 +60,24 @@ The walk reads the definition, not the engine's behaviour: two leaves that do th
 
 ## Cube table
 
-A second generated table covers the Vintage Cube list (`data/cube_v1/mtgo_vintage_cube_20261007.json`) in the `eternal-fixtures` build. The M4 learner's card index and loader (`cube_draft_build_v1`) read the cube table under the D0.3 to D0.5 pins. The M4 owner view (`cube_owner_view_v1`, D0.21), the shakedown launcher (`cube_training_launcher_v1`, D0.3 to D0.5), and the read executor (`cube_pod_runner_v1`, D0.3 to D0.5) load it through that loader. No other code may read it.
+A second generated table covers the Vintage Cube list (`data/cube_v1/mtgo_vintage_cube_20261007.json`) in the `eternal-fixtures` build. There are two cube files:
+
+- **The full table** (`cube_table_v1_full.json`, M2 task T8): the table `--cube` regenerates and checks. It is the table arm E (`card_semantics_e1`, `+cse1`) reads in Cube training, and `PilotPin.table_sha256` binds its file SHA-256 under arm E. `mtg-kernel/src/card_semantics_e1_cube_v1.rs` declares its path and SHA-256, the arm E scales below, the active-card row check and the pin helper (`pilot_table_sha256_v1`).
+- **The provisional table** (`cube_table_v1.json`, SHA-256 `778c12a1...`): the table M4 D0 to D8 pin. The M4 learner's card index and loader (`cube_draft_build_v1`) read it under the D0.3 to D0.5 pins; the M4 owner view (`cube_owner_view_v1`, D0.21), the shakedown launcher (`cube_training_launcher_v1`, D0.3 to D0.5), and the read executor (`cube_pod_runner_v1`, D0.3 to D0.5) load it through that loader. The generator no longer writes it; `--cube --check` requires its bytes unchanged and requires the full table to keep its 978 columns at their indices. M4 D15 re-pins those readers on the full table.
+
+No other code may read either table.
 
 Files:
 
-- `data/card_semantics_v1/cube_table_v1.json`: the cube table. Rows are every card in the cube list that has an executable definition (`Full` or `Partial`) in the `eternal-fixtures` build, plus the five basic lands (`Plains`, `Island`, `Swamp`, `Mountain`, `Forest`). Cube cards without an executable definition are excluded from the rows and listed as `not implemented` in the dump and report.
-- `data/card_semantics_v1/cube_table_v1.txt`: human-readable dump with the same sections as the Pauper dump (`Census`, `Cards`, `Vocabulary`, `Token families`), with the cube report in the census section.
+- `data/card_semantics_v1/cube_table_v1_full.json`: the full cube table. Rows are every card in the cube list that has an executable definition (`Full` or `Partial`) in the `eternal-fixtures` build, plus the five basic lands (`Plains`, `Island`, `Swamp`, `Mountain`, `Forest`). Cube cards without an executable definition are excluded from the rows and listed as `not implemented` in the dump and report.
+- `data/card_semantics_v1/cube_table_v1_full.txt`: human-readable dump with the same sections as the Pauper dump (`Census`, `Cards`, `Vocabulary`, `Token families`), with the cube report in the census section.
+- `data/card_semantics_v1/cube_table_v1_full_e1_scales.json` (schema `card_semantics_e1_scales/v1`): the arm E reader's power-of-two column divisors for the full table (each column is divided by the next power of two at or above its largest absolute value, at least 1) and the reader's binding digest, the value the checkpoint's `card_semantics` section carries. `--cube --write` stages it with the table and dump and publishes the dump, then the scales, then the table, restoring the dump and scales if a later rename fails; `--cube --check` and the `card_semantics_e1_cube_v1` tests require it to equal the reader's own computation.
+- `data/card_semantics_v1/cube_table_v1_full_column_map_778c12a1.json`: the provisional to full column map (identity on the 978 provisional columns; the full table appends the fetch family).
 - Shares `data/card_semantics_v1/leaf_mapping_v1.json`, the schema string family (`card_semantics_table/v1`), the typed token walk, and the integer-only count/value encoding (value tokens clamped to plus or minus 1000).
+
+Fetch family (cube table only): `fetch:subtype=Plains` to `fetch:subtype=Forest`, one count column per basic land type, 1 on a land whose battlefield library searches can find that type, read from the engine's typed search filters (`cube_draft_v1::land_fetch_bits`), never from card names. The walk drops the subtypes of a search filter, so before this family Scalding Tarn, Polluted Delta and Arid Mesa had identical rows. The Pauper table never carries the family, so its bytes are unchanged.
+
+Zero missing rows (M3.10): every active card (the cube list minus the signed fence `fence_v3.json`, 525 cards, plus the five basics) has a nonzero row in the full table. The arm E reader would give a card without a row a zero row silently, so `card_semantics_e1_cube_v1::missing_rows_v1` is the Gate 1 check.
 
 Regenerate and check (requires `--features eternal-fixtures`):
 
@@ -96,7 +107,7 @@ PR 984 manually reordered the prior Cube vocabulary before regeneration. The Pau
 
 The name-list fix keeps all 978 positions and their token kinds. Tamiyo's former name ID value column at 956 has zero carriers. The existing map documents the PR 984 migration, and the current Cube table uses the same column indices as PR 984.
 
-Cube report (written in `cube_table_v1.txt` and printed by `--cube --check`; informational only, with no pass or fail thresholds; the Pauper pair checks are not applied to the cube table):
+Cube report (written in `cube_table_v1_full.txt` and printed by `--cube --check`; informational only, with no pass or fail thresholds; the Pauper pair checks are not applied to the cube table):
 
 - Row count, vector width, Pauper prefix width, and number of columns new beyond the Pauper vocabulary.
 - **Low-distinctiveness cards**: for rows `a` and `b`, `overlap(a, b)` is the count of nonzero `(column, value)` pairs of `a` that `b` also carries divided by the count of nonzero `(column, value)` pairs of `a`. The report counts and lists every row `a` for which at least 10 other cube rows `b` satisfy `overlap(a, b) >= 0.75` (exact integer arithmetic).
