@@ -169,6 +169,9 @@ fn path_config_v1(
         ForwardPathV1::TransferV8 => {
             Err("the exact GPU forward does not run the V8 inclusion net".into())
         }
+        ForwardPathV1::TransferV9 => {
+            Err("the exact GPU forward does not run the FlatV9 net".into())
+        }
     }
 }
 
