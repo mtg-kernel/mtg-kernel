@@ -1784,6 +1784,66 @@ where
     Ok(core)
 }
 
+fn flat_action_core_and_refs_for_contract_v1<F>(
+    session: &FastActorSessionV1,
+    semantic: &ActionSemanticV1,
+    expected_actor: PlayerSeatV1,
+    ref_start: u32,
+    mut emit_ref: F,
+) -> Result<FlatActionCoreV1, FlatActionDecisionSliceErrorV1>
+where
+    F: FnMut(
+        FlatActionRefRoleV1,
+        u16,
+        u16,
+        &CardStableRefV1,
+    ) -> Result<(), FlatActionDecisionSliceErrorV1>,
+{
+    if session.is_cube_v1() {
+        if let ActionSemanticV1::ChooseAttackTarget {
+            actor,
+            attacker,
+            target,
+        } = semantic
+        {
+            if *actor != expected_actor {
+                return Err(FlatActionDecisionSliceErrorV1::ActingPlayerMismatch);
+            }
+            let mut core = FlatActionCoreV1 {
+                kind: FlatActionKindV1::ChooseTarget,
+                remaining: 1,
+                ref_start,
+                ..FlatActionCoreV1::default()
+            };
+            let mut ref_count = 0_u16;
+            let mut push_ref = |role, reference| {
+                emit_ref(role, 0, 0, reference)?;
+                ref_count = ref_count
+                    .checked_add(1)
+                    .ok_or(FlatActionDecisionSliceErrorV1::CheckedIntegerRange)?;
+                Ok(())
+            };
+            push_ref(FlatActionRefRoleV1::Attacker, attacker)?;
+            match target {
+                TargetRefV1::StackItem { .. } => {
+                    return Err(FlatActionDecisionSliceErrorV1::InvalidActionRange)
+                }
+                TargetRefV1::Player { player } => {
+                    core.target_kind = 1;
+                    core.target_player = flat_relative_seat_v1(*player, expected_actor)? + 1;
+                }
+                TargetRefV1::Object { object } => {
+                    core.target_kind = 2;
+                    push_ref(FlatActionRefRoleV1::TargetObject, object)?;
+                }
+            }
+            core.ref_len = ref_count;
+            return Ok(core);
+        }
+    }
+    flat_action_core_and_refs_v1(semantic, expected_actor, ref_start, emit_ref)
+}
+
 fn flat_stack_action_object_ordinal_v1(
     state: &crate::state::GameState,
     object_id: ObjectId,
@@ -3479,6 +3539,38 @@ fn flat_validate_origin_decision_common_scoped_cube_inner(
                 }
             }
         }
+        Decision::ChooseAttackTarget {
+            player,
+            attacker,
+            candidates: origin_candidates,
+        } => {
+            if !accept_cube {
+                return Err(FlatActionDecisionSliceErrorV1::UnsupportedActionSemantic);
+            }
+            if current.actor != *player || candidates.len() != origin_candidates.len() {
+                return Err(invalid());
+            }
+            for (candidate, expected_target) in candidates.iter().zip(origin_candidates) {
+                if !matches!(
+                    (&candidate.semantic, &candidate.policy_action),
+                    (
+                        ActionSemanticV1::ChooseAttackTarget {
+                            actor,
+                            attacker: semantic_attacker,
+                            target: semantic_target,
+                        },
+                        PolicyActionV5::Surface(SurfaceAction::Action(
+                            Action::ChooseAttackTarget(action_target),
+                        )),
+                    ) if actor_matches(*actor, *player)
+                        && flat_ref_matches_object_v1(semantic_attacker, *attacker)
+                        && flat_target_matches_v1(semantic_target, *expected_target)
+                        && action_target == expected_target
+                ) {
+                    return Err(invalid());
+                }
+            }
+        }
         Decision::ChooseVariableCastTargets { .. }
         | Decision::ChooseVariableCastKicker { .. }
         | Decision::ChooseEntryColorV36 { .. }
@@ -3489,7 +3581,6 @@ fn flat_validate_origin_decision_common_scoped_cube_inner(
         | Decision::ChooseLegendPermanent { .. }
         | Decision::ChooseLondonMulligan { .. }
         | Decision::ChooseLondonBottom { .. }
-        | Decision::ChooseAttackTarget { .. }
         | Decision::DeclareAttackers { .. }
         | Decision::DeclareBlockers { .. }
         | Decision::GameOver { .. }
@@ -3781,6 +3872,26 @@ fn flat_validate_semantic_policy_pair_v1(
     } else {
         Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation)
     }
+}
+
+fn flat_validate_semantic_policy_pair_for_contract_v1(
+    session: &FastActorSessionV1,
+    candidate: &CorePolicyActionCandidateV1,
+) -> Result<(), FlatActionDecisionSliceErrorV1> {
+    use crate::engine::Action;
+    use crate::surface::SurfaceAction;
+
+    if session.is_cube_v1() {
+        if let ActionSemanticV1::ChooseAttackTarget { target, .. } = &candidate.semantic {
+            return match &candidate.policy_action {
+                PolicyActionV5::Surface(SurfaceAction::Action(Action::ChooseAttackTarget(
+                    actual,
+                ))) if flat_target_matches_v1(target, *actual) => Ok(()),
+                _ => Err(FlatActionDecisionSliceErrorV1::InvalidDecisionRelation),
+            };
+        }
+    }
+    flat_validate_semantic_policy_pair_v1(candidate)
 }
 
 #[cfg(test)]
