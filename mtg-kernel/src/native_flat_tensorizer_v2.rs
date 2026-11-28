@@ -1896,6 +1896,15 @@ pub(crate) fn fill_native_flat_decision_tensors_v7_with_scratch(
     fill_native_flat_decision_tensors_v4_or_v7(view, scratch, output)
 }
 
+/// FlatV9 (`native_flat_tensorizer_v9.rs`): the raw flat object row of each
+/// object node of the V4-generation fill (V4, FlatV7 and FlatV8), in node
+/// order. An empty list means the fill emitted its single padding row.
+pub(crate) fn object_node_to_raw_v9(
+    view: crate::flat_policy_v4::FlatScoringDecisionViewV4<'_>,
+) -> Result<Vec<usize>, NativeFlatTensorErrorV2> {
+    Ok(build_object_projection_v4(view)?.node_to_raw)
+}
+
 /// FlatV8 (`native_flat_tensorizer_v8.rs`): the explicit include bit of each
 /// action row, in row order. 1.0 exactly on the `include: true` row of an
 /// attacker- or blocker-inclusion decision, 0.0 on every other row.
