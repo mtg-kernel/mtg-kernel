@@ -1480,6 +1480,7 @@ fn real_episode(id: &str, seed: u64, learner_seat: u8) -> ExpandedEpisodeV1 {
         max_physical_decisions: 100_000,
         max_policy_steps: 200_000,
         cube_flat_action_contract: false,
+        flat_v9: false,
         max_stack_objects: None,
         runtime_rules: Some(EpisodeRuntimeRulesV1::ResolutionBoundaryV1),
         reset: None,

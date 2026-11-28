@@ -1755,6 +1755,13 @@ pub struct ExpandedEpisodeV1 {
     /// Last so older positional arrays still decode.
     #[serde(default, skip_serializing_if = "is_false_v1")]
     pub cube_flat_action_contract: bool,
+    /// FlatV9 (M2 task T6): the game keeps the FlatV9 history record
+    /// (`flat_v9_history_v1`) from its start, so collection and every replay
+    /// of the episode see the same history. Required, and only allowed, with
+    /// a FlatV9 learner. False is omitted and preserves every prior
+    /// serialized byte. Last so older positional arrays still decode.
+    #[serde(default, skip_serializing_if = "is_false_v1")]
+    pub flat_v9: bool,
 }
 
 /// Named game-level runtime rules profiles an episode may select.
@@ -3927,6 +3934,9 @@ fn episode_session_v1(
         session.set_runtime_rules_v1(rules.rules())?;
     }
     session.set_max_stack_objects(episode.max_stack_objects);
+    if episode.flat_v9 {
+        session.enable_flat_v9_history_v1()?;
+    }
     Ok(session)
 }
 
@@ -4040,6 +4050,14 @@ fn collect_episode_hooked_with_options_v1(
     ensure(
         episode.opponent.is_some() == opponent.is_some(),
         "opponent dispatch source missing",
+    )?;
+    // FlatV9 reads the game's history record: a FlatV9 learner plays only
+    // FlatV9 episodes, and no other learner plays one.
+    ensure(
+        episode.flat_v9
+            == (policy.feature_identity_v1().feature_contract_digest
+                == crate::native_flat_tensorizer_v9::FEATURE_CONTRACT_DIGEST_V9),
+        "flat_v9 episodes require a FlatV9 learner, and a FlatV9 learner requires them",
     )?;
     if let Some(other) = &opponent {
         // Strict whole-generation equality (never a flag): a trajectory
@@ -9783,6 +9801,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100,
             max_policy_steps: 1000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -10325,6 +10344,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100,
             max_policy_steps: 1000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -10440,6 +10460,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -10585,6 +10606,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -10731,6 +10753,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -10875,6 +10898,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11002,6 +11026,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11142,6 +11167,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11294,6 +11320,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11436,6 +11463,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11595,6 +11623,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11756,6 +11785,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 200_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -11803,6 +11833,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13228,6 +13259,7 @@ pub(crate) mod tests {
                 max_physical_decisions: 100_000,
                 max_policy_steps: 1_000_000,
                 cube_flat_action_contract: false,
+                flat_v9: false,
                 max_stack_objects: None,
                 runtime_rules: None,
                 reset: None,
@@ -13293,6 +13325,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13341,6 +13374,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13470,6 +13504,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13533,6 +13568,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13582,6 +13618,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13646,6 +13683,7 @@ pub(crate) mod tests {
                 max_physical_decisions: 100_000,
                 max_policy_steps: 1_000_000,
                 cube_flat_action_contract: false,
+                flat_v9: false,
                 max_stack_objects: None,
                 runtime_rules: None,
                 reset: None,
@@ -13725,6 +13763,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13766,6 +13805,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13825,6 +13865,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -13867,6 +13908,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -14018,6 +14060,7 @@ pub(crate) mod tests {
                 max_physical_decisions: 100_000,
                 max_policy_steps: 1_000_000,
                 cube_flat_action_contract: false,
+                flat_v9: false,
                 max_stack_objects: None,
                 runtime_rules: None,
                 reset: None,
@@ -14405,6 +14448,7 @@ pub(crate) mod tests {
                     max_physical_decisions: 100_000,
                     max_policy_steps: 1_000_000,
                     cube_flat_action_contract: false,
+                    flat_v9: false,
                     max_stack_objects: None,
                     runtime_rules: None,
                     reset: None,
@@ -14839,6 +14883,7 @@ pub(crate) mod tests {
                     max_physical_decisions: 100_000,
                     max_policy_steps: 1_000_000,
                     cube_flat_action_contract: false,
+                    flat_v9: false,
                     max_stack_objects: None,
                     runtime_rules: None,
                     reset: None,
@@ -14993,6 +15038,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -15137,6 +15183,7 @@ pub(crate) mod tests {
             london_keep_offset: None,
             deck_format: None,
             cube_flat_action_contract: false,
+            flat_v9: false,
         };
         let trajectory = collect_episode(&mut policy, &learner, None, &episode).unwrap();
 
@@ -15257,6 +15304,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -15732,6 +15780,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100_000,
             max_policy_steps: 1_000_000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -16212,6 +16261,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100000,
             max_policy_steps: 1000000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,
@@ -16366,6 +16416,7 @@ pub(crate) mod tests {
             max_physical_decisions: 100000,
             max_policy_steps: 1000000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,

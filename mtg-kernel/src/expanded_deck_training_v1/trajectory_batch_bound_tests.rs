@@ -99,6 +99,7 @@ fn fixture(tag: &str) -> (TempTestDir, ExpandedModelSourceV1, Vec<PinnedFileV1>)
             max_physical_decisions: 100000,
             max_policy_steps: 1000000,
             cube_flat_action_contract: false,
+            flat_v9: false,
             max_stack_objects: None,
             runtime_rules: None,
             reset: None,

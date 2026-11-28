@@ -303,6 +303,7 @@ fn episodes(lists: &[ExpandedDeckListV1], seeds: usize) -> Vec<ExpandedEpisodeV1
                         max_physical_decisions: MAX_PHYSICAL_DECISIONS,
                         max_policy_steps: MAX_POLICY_STEPS,
                         cube_flat_action_contract: false,
+                        flat_v9: false,
                         max_stack_objects: None,
                         runtime_rules: Some(EpisodeRuntimeRulesV1::ResolutionBoundaryV1),
                         reset: None,
