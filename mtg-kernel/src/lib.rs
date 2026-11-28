@@ -200,6 +200,8 @@ pub mod bounded_staleness_async_harness_v1;
 pub mod bounded_staleness_async_production_v1;
 pub mod bounded_staleness_async_v1;
 pub mod card_def;
+#[cfg(feature = "eternal-fixtures")]
+pub mod card_semantics_e1_cube_v1;
 pub mod combat_damage_v1;
 pub(crate) mod continuous_characteristics_v1;
 pub(crate) mod continuous_source_frame_v1;
@@ -560,6 +562,8 @@ pub mod flat_policy_v2;
 pub mod flat_policy_v3;
 pub mod flat_policy_v4;
 pub mod flat_policy_v5;
+pub(crate) mod flat_policy_v6;
+pub mod flat_v9_history_v1;
 pub mod heartfire_history_v1;
 pub mod heartfire_public_v1;
 pub mod ids;
@@ -735,6 +739,7 @@ pub mod native_flat_tensorizer_v5;
 pub mod native_flat_tensorizer_v6;
 pub(crate) mod native_flat_tensorizer_v7;
 pub(crate) mod native_flat_tensorizer_v8;
+pub(crate) mod native_flat_tensorizer_v9;
 // Multi-buffer SHA-512 for the tensorizer digest tails (byte-identical to sha2).
 pub(crate) mod sha512_multi_v1;
 // Deterministic-CPU-forward audit probe (model-guided-searcher design v1,

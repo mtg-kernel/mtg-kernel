@@ -2707,6 +2707,11 @@ pub struct GameState {
     /// and hashes are unchanged. See `rl::enable_public_shroud_v1`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub public_shroud_v1: bool,
+    /// Opt-in FlatV9 history (`flat_v9_history_v1`): turn sequence, exact
+    /// entry and plot stamps and the public tutor marker. Absent in every
+    /// other game, whose bytes and hashes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) flat_v9_history_v1: Option<Box<crate::flat_v9_history_v1::FlatV9HistoryV1>>,
     /// Observer-scoped facts for observation projection only; see
     /// [`ObservationJournalV1`]. Not serialized, hashed or compared.
     #[serde(skip)]
@@ -3053,6 +3058,10 @@ impl Hash for GameState {
         if self.public_shroud_v1 {
             "public-shroud/v1".hash(state);
         }
+        if let Some(history) = &self.flat_v9_history_v1 {
+            "flat-v9-history/v1".hash(state);
+            history.hash(state);
+        }
         if self.curator_unordered_reveal_v1 {
             "curator-unordered-reveal/v1".hash(state);
         }
@@ -3319,6 +3328,7 @@ impl GameState {
             hand_departures_by_name_v1: false,
             hand_knowledge_by_name_v2: false,
             public_shroud_v1: false,
+            flat_v9_history_v1: None,
             observation_journal: ObservationJournalV1::default(),
             reveal_meaning_v3: Default::default(),
             reveal_knowledge_v4: None,
@@ -3351,7 +3361,12 @@ impl GameState {
             id
         };
         self.transfer_library_knowledge_to_hand(player, 0, id);
+        // FlatV9 history: a draw is a public top removal, told apart from
+        // every other removal by taking the record past its note.
+        let flat_v9 = self.flat_v9_history_v1.take();
         self.note_library_removal(player, 0);
+        self.flat_v9_history_v1 = flat_v9;
+        crate::flat_v9_history_v1::on_draw_v1(self, player);
         self.clear_object_relations(id);
         let turn = self.turn_key_v1();
         let new_generation = {
@@ -3380,6 +3395,12 @@ impl GameState {
     /// Appends one observer-scoped fact, anchored to the current length of
     /// `engine.event_history` (see [`ObservationNoteV1`]).
     pub(crate) fn note_observation(&mut self, kind: ObservationNoteKindV1) {
+        if let Some(history) = &mut self.flat_v9_history_v1 {
+            let players = &self.players;
+            crate::flat_v9_history_v1::on_observation_note_v1(history, &kind, |owner| {
+                players[owner.index()].library.len()
+            });
+        }
         if let ObservationNoteKindV1::LibraryRandomized { owner } = &kind {
             self.reveal_meaning_v3.shuffle(*owner);
         }
@@ -4532,6 +4553,7 @@ impl GameState {
         self.players[owner.index()].library[start..]
             .copy_from_slice(&staged.players[owner.index()].library);
         self.randomness = staged.randomness;
+        crate::flat_v9_history_v1::on_partial_randomization_v1(self, owner, start..len);
         for observer in [PlayerId::P0, PlayerId::P1] {
             self.library_knowledge[observer.index()][owner.index()]
                 .retain(|entry| (entry.position as usize) < start);
@@ -4567,6 +4589,7 @@ impl GameState {
         self.players[owner.index()].library[..count]
             .copy_from_slice(&staged.players[owner.index()].library);
         self.randomness = staged.randomness;
+        crate::flat_v9_history_v1::on_partial_randomization_v1(self, owner, 0..count);
         for observer in [PlayerId::P0, PlayerId::P1] {
             self.library_knowledge[observer.index()][owner.index()]
                 .retain(|entry| (entry.position as usize) >= count);
