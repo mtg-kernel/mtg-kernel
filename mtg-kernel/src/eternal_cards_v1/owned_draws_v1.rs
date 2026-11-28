@@ -104,6 +104,9 @@ enum InstructionV1 {
         drawer: PlayerId,
         count: u32,
     },
+    LegacyCurie {
+        fallback: u32,
+    },
 }
 
 impl InstructionV1 {
@@ -151,6 +154,9 @@ impl InstructionV1 {
                 creature: *creature,
                 spec: *spec,
             }),
+            EternalOpV1::E7aV1(E7aOpV1::CurieDrawV1 { fallback }) => Some(Self::LegacyCurie {
+                fallback: *fallback,
+            }),
             EternalOpV1::E7aV1(E7aOpV1::CurieDrawBoundV1 { combat_at }) => Some(Self::Curie {
                 combat_at: *combat_at,
             }),
@@ -177,6 +183,16 @@ impl InstructionV1 {
             return None;
         };
         Self::from_op(op)
+    }
+
+    fn curie_combat(self, state: &GameState, source: SourceV1) -> Option<usize> {
+        match (self, source) {
+            (Self::LegacyCurie { .. }, SourceV1::Ability(source)) => {
+                eternal_legacy_e7a_v1::curie::legacy_combat_at(state, source)
+            }
+            (Self::Curie { combat_at }, SourceV1::Ability(_)) => Some(combat_at),
+            _ => None,
+        }
     }
 
     fn count(self, state: &GameState, ctx: &ExecCtx) -> u32 {
@@ -210,6 +226,9 @@ impl InstructionV1 {
             Self::Room { kind, .. } => kind.count(),
             Self::Denial { count, .. } => u32::from(count),
             Self::Knowledge { second_at, .. } => knowledge::count(state, second_at).unwrap_or(0),
+            Self::LegacyCurie { fallback } => {
+                eternal_legacy_e7a_v1::curie::legacy_draw_count(state, ctx, fallback)
+            }
             Self::Curie { combat_at } => {
                 eternal_legacy_e7a_v1::curie::draw_count(state, ctx, combat_at).unwrap_or(0)
             }
@@ -664,6 +683,11 @@ fn selected(state: &GameState, pending: &EffectContinuation) -> Option<(Instruct
                     .chandra_emblems
                     .contains(&(item.controller, source))
             }),
+            // Released triggers carry the captured ability source even when Curie
+            // copied another creature. They predate the CurieCombat receipt.
+            (InstructionV1::LegacyCurie { .. }, StackItemKind::TriggeredAbility, _) => {
+                eternal_legacy_e7a_v1::curie::legacy_combat_at(state, source).is_some()
+            }
             (InstructionV1::Curie { combat_at }, StackItemKind::TriggeredAbility, _) => {
                 eternal_legacy_e7a_v1::curie::combat_source(state, combat_at) == Some(source)
             }
@@ -870,7 +894,8 @@ pub(crate) fn begin(
         finish_instruction(state, pending, instruction);
         return Ok(());
     }
-    if let InstructionV1::Curie { combat_at } = instruction {
+    // Freeze Curie's base power before a draw or dredge can change it.
+    if let Some(combat_at) = instruction.curie_combat(state, source) {
         record(
             state,
             JournalV1::CurieDrawCount {
@@ -1209,7 +1234,10 @@ fn validate_native_progress(
             SourceV1::Ability(source) => Some(super::e3::ring_burden_count(state, source)),
             SourceV1::Spell(_) | SourceV1::FlameOfAnor { .. } => None,
         },
-        (InstructionV1::Curie { combat_at }, None) => {
+        (instruction @ (InstructionV1::LegacyCurie { .. } | InstructionV1::Curie { .. }), None) => {
+            let SourceV1::Ability(source) = started.source else {
+                return Err("Curie draw lost its original ability source".into());
+            };
             let count_at = progress
                 .started_at
                 .checked_sub(1)
@@ -1220,16 +1248,21 @@ fn validate_native_progress(
                         item,
                         combat_at: original,
                         count,
-                    } if item == started.item && original == combat_at => {
-                        let SourceV1::Ability(source) = started.source else {
-                            return Err("Curie draw lost its original ability source".into());
-                        };
-                        match eternal_legacy_e7a_v1::curie::departed_count_before(
-                            state, combat_at, source, count_at,
-                        ) {
-                            Some(None) => Some(count),
-                            Some(Some(power)) if power == count => Some(count),
-                            _ => None,
+                    } if item == started.item
+                        && instruction.curie_combat(state, started.source) == Some(original) =>
+                    {
+                        if let InstructionV1::LegacyCurie { .. } = instruction {
+                            // With no departure journal the released trigger carries
+                            // its own fallback. The count receipt freezes live power.
+                            Some(count)
+                        } else {
+                            match eternal_legacy_e7a_v1::curie::departed_count_before(
+                                state, original, source, count_at,
+                            ) {
+                                Some(None) => Some(count),
+                                Some(Some(power)) if power == count => Some(count),
+                                _ => None,
+                            }
                         }
                     }
                     _ => None,

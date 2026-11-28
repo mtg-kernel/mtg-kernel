@@ -223,7 +223,14 @@ fn legacy_choice_matches(
         && item.v4.ability_source_contract.is_some_and(|s| {
             crate::card_def::CARD_DEFS[usize::from(s.card_def)].name == "Sylvan Library"
         });
+    let standstill = matches!(
+        leaf,
+        Some(EffectOp::StandardV1(S::EternalV1(E::P1bV1(
+            crate::eternal_premodern_p1b_v1::P1bOpV1::StandstillV1 { .. }
+        ))))
+    );
     let generated = sylvan
+        || standstill
         || matches!(
             leaf,
             Some(EffectOp::StandardV1(S::EternalV1(
@@ -245,7 +252,9 @@ fn legacy_choice_matches(
     starts.push(end);
     for (skip, start) in starts.into_iter().enumerate() {
         if skip > 0
-            && (batch || !(sylvan || item.v4.stack_item_id.0 < state.engine.next_stack_item_id))
+            && (batch
+                || standstill
+                || !(sylvan || item.v4.stack_item_id.0 < state.engine.next_stack_item_id))
         {
             break;
         }

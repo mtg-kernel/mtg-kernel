@@ -693,6 +693,7 @@ fn native_vial_metamorph_of_animated_standstill_keeps_ordinary_copied_source_rou
             ],
             &["Lightning Bolt"],
         );
+        let jace = cast_jace(&mut state, owner);
         let vial = held(&state, owner, "Aether Vial");
         cast_held(&mut state, owner, vial, None, &[], 1);
         settled(&mut state);
@@ -741,6 +742,7 @@ fn native_vial_metamorph_of_animated_standstill_keeps_ordinary_copied_source_rou
             .copies
             .iter()
             .any(|entry| entry.host.object == copy));
+        copied_standstill_replacements(restored(&state), owner, source, copy, jace);
         let hand = state.players[owner.index()].hand.len();
         let opponent = owner.opponent();
         priority(&mut state, opponent);
@@ -762,4 +764,101 @@ fn native_vial_metamorph_of_animated_standstill_keeps_ordinary_copied_source_rou
         }
         assert_eq!(state.state_hash(), replay.state_hash());
     }
+}
+
+/// Isolate the Metamorph trigger. Dredging the last four cards makes Jace and
+/// Hullbreacher compete on each of the two remaining draws.
+fn copied_standstill_replacements(
+    mut state: GameState,
+    drawer: PlayerId,
+    original: ObjectId,
+    copy: ObjectId,
+    jace: ObjectId,
+) {
+    use mtg_kernel::event::{self, ProposedEvent};
+    event::propose_and_commit(
+        &mut state,
+        ProposedEvent::zone_change(original, Zone::Graveyard),
+    );
+    while state.players[drawer.index()].library.len() > 4 {
+        let card = state.players[drawer.index()].library[0];
+        event::propose_and_commit(&mut state, ProposedEvent::zone_change(card, Zone::Exile));
+    }
+    // One seat also gets Riddler's fourth attempt. The dredge grows the
+    // one-card hand, so recomputing the adjustment later would lose a draw.
+    let extra = usize::from(drawer == P1);
+    if extra > 0 {
+        while state.players[drawer.index()].hand.len() > 1 {
+            let card = state.players[drawer.index()].hand[0];
+            event::propose_and_commit(&mut state, ProposedEvent::zone_change(card, Zone::Exile));
+        }
+        put(&mut state, drawer, "Quantum Riddler", Zone::Battlefield);
+    }
+    let opponent = drawer.opponent();
+    put(&mut state, opponent, "Hullbreacher", Zone::Battlefield);
+    let thug = put(&mut state, drawer, "Golgari Thug", Zone::Graveyard);
+    priority(&mut state, opponent);
+    let bolt = held(&state, opponent, "Lightning Bolt");
+    cast_held(&mut state, opponent, bolt, Some(drawer), &[ManaColor::R], 0);
+    assert!(
+        matches!(settle(&mut state), Some(Decision::ChooseEffectTargets { source, player, legal_targets, .. })
+        if source == copy && player == drawer && legal_targets == [Target::Object(thug)])
+    );
+    state = restored(&state);
+    act(&mut state, Action::ChooseEffectTarget(Target::Object(thug)));
+    for ordinal in 0..2 + extra {
+        assert!(
+            matches!(settle(&mut state), Some(Decision::ChooseEffectTargets { source, player, legal_targets, .. })
+            if source == copy && player == drawer && legal_targets == [Target::Object(jace)])
+        );
+        state = restored(&state);
+        if ordinal == 0 {
+            let mut win = restored(&state);
+            act(&mut win, Action::ChooseEffectTarget(Target::Object(jace)));
+            assert!(
+                matches!(next(&mut win), Decision::GameOver { winner: Some(player) } if player == drawer)
+            );
+            assert!(named(&win, opponent, "Treasure Token").is_empty());
+        }
+        act(&mut state, Action::FinishEffectSelection);
+    }
+    settled(&mut state);
+    assert_eq!(zone(&state, thug), Zone::Hand);
+    assert_eq!(named(&state, opponent, "Treasure Token").len(), 2 + extra);
+    assert_eq!(sacrifices(&state, copy), 1);
+}
+
+/// ebf636b8c offered three Dredge attempts even with Riddler in play.
+/// This save was taken on the second offer, after dredging the first Thug.
+#[test]
+fn released_copied_standstill_keeps_the_remaining_offer() {
+    let mut state: GameState = serde_json::from_reader(flate2::read::GzDecoder::new(
+        &include_bytes!("../fixtures/standstill_ebf636b8c.json.gz")[..],
+    ))
+    .unwrap();
+    state = restored(&state);
+    let Some(Decision::ChooseEffectTargets {
+        player,
+        legal_targets,
+        ..
+    }) = settle(&mut state)
+    else {
+        panic!("lost the released Dredge offer");
+    };
+    assert_eq!(legal_targets.len(), 1);
+    let Target::Object(thug) = legal_targets[0] else {
+        panic!("missing second Thug")
+    };
+    assert_eq!(state.objects.get(thug).name, "Golgari Thug");
+    act(&mut state, Action::ChooseEffectTarget(Target::Object(thug)));
+    let jace = named(&state, player, "Jace, Wielder of Mysteries")[0];
+    assert!(
+        matches!(settle(&mut state), Some(Decision::ChooseEffectTargets { legal_targets, .. })
+        if legal_targets == [Target::Object(jace)])
+    );
+    assert_eq!(zone(&state, thug), Zone::Hand);
+    state = restored(&state);
+    act(&mut state, Action::FinishEffectSelection);
+    settled(&mut state);
+    assert_eq!(named(&state, player.opponent(), "Treasure Token").len(), 1);
 }

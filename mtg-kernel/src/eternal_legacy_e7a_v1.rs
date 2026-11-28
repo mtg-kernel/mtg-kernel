@@ -1571,19 +1571,12 @@ pub(crate) fn execute(op: &E7aOpV1, ctx: &ExecCtx, state: &mut GameState) {
             become_copy(state, curie, copied, 0);
         }
         E7aOpV1::CurieDrawV1 { fallback } => {
-            let count = live_ability_source(ctx, state)
-                .and_then(|source| crate::engine::effective_base_power(state, source))
-                .map_or(*fallback, |power| u32::try_from(power.max(0)).unwrap_or(0));
-            if count > 0 {
-                crate::effect::execute(
-                    &EffectOp::DrawCards {
-                        player: PlayerRef::Controller,
-                        count,
-                    },
-                    ctx,
-                    state,
-                );
-            }
+            let count = curie::legacy_draw_count(state, ctx, *fallback);
+            crate::eternal_cards_v1::owned_draws_v1::draw_uninterrupted(
+                state,
+                ctx.controller,
+                count,
+            );
         }
         E7aOpV1::CurieDrawBoundV1 { combat_at } => {
             if let Some(count) = curie::draw_count(state, ctx, *combat_at) {

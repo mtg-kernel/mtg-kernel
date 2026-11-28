@@ -8370,6 +8370,16 @@ fn leaf_staged_draw(
         E::Pf2bV1(crate::eternal_pauper_pf2b_v1::Pf2bOpV1::FlushOutV1) => {
             Some((PlayerRef::Controller, 2, Vec::new()))
         }
+        E::P1bV1(crate::eternal_premodern_p1b_v1::P1bOpV1::StandstillV1 { caster }) => {
+            crate::eternal_cards_v1::owned_draws_v1::standstill::legacy_draw_start(
+                state, ctx, start,
+            )?;
+            Some((
+                crate::eternal_premodern_p1b_v1::standstill_drawer(ctx.controller, *caster),
+                3,
+                Vec::new(),
+            ))
+        }
         // Sylvan Library stages two draws above its choose/put-back frame.
         E::P1aV1(P1aOpV1::SylvanDrawV1) => {
             let below = EffectFrame::Program {

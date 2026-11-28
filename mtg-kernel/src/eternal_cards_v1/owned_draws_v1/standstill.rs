@@ -1,7 +1,7 @@
 //! Native Standstill cast trigger, successful sacrifice, and owned draw attempts.
 use super::{has_started, record, JournalV1 as DrawJournalV1};
 use crate::card_def::CARD_DEFS;
-use crate::effect::{EffectContinuation, EffectOp};
+use crate::effect::{EffectContinuation, EffectOp, ExecCtx};
 use crate::eternal_cards_v1::EternalOpV1;
 use crate::eternal_premodern_p1b_v1::{self as p1b, P1bOpV1};
 use crate::event::{self, CommittedEvent, ProposedEvent};
@@ -297,6 +297,22 @@ pub(crate) fn publish(state: &mut GameState, id: StackItemId) -> Result<(), Stri
 fn resolved(state: &GameState, triggered_at: usize) -> bool {
     rows(state).any(|(_, row)| matches!(row, JournalV1::SacrificeCompleted { triggered_at: original, .. } | JournalV1::Skipped { triggered_at: original, .. } if original == triggered_at))
 }
+/// On the released unbound path, the successful sacrifice and departure
+/// immediately precede this trigger's draw instruction.
+pub(crate) fn legacy_draw_start(state: &GameState, ctx: &ExecCtx, end: usize) -> Option<usize> {
+    let history = state.engine.event_history.get(..end)?;
+    let sacrifice = history.iter().rposition(|row| {
+        matches!(row,
+        CommittedEvent::Sacrificed { object, controller_before, .. }
+            if *object == ctx.source && *controller_before == ctx.controller)
+    })?;
+    let after_sacrifice = sacrifice + 1;
+    let departure = history[after_sacrifice..].iter().position(|row| matches!(row,
+        CommittedEvent::ZoneChange { object, from: Zone::Battlefield, to, controller_before }
+            if *object == ctx.source && *controller_before == ctx.controller && *to != Zone::Battlefield))?;
+    Some(after_sacrifice + departure + 1)
+}
+
 fn sacrifice_proof(state: &GameState, item: &StackItem, triggered_at: usize) -> bool {
     let Some((source, _)) = trigger(state, triggered_at) else {
         return false;
