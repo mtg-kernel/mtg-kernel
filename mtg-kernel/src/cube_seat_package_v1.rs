@@ -93,6 +93,7 @@ struct Manifest {
 }
 
 pub struct SeatPackage {
+    manifest_sha256: String,
     kind: SeatPackageKind,
     pool: CubePool,
     draft_build: Option<LoadedDraftBuild>,
@@ -221,11 +222,16 @@ impl SeatPackage {
             }
         };
         Ok(Self {
+            manifest_sha256: expected_sha256.to_owned(),
             kind,
             pool,
             draft_build,
             play,
         })
+    }
+
+    pub fn manifest_sha256(&self) -> &str {
+        &self.manifest_sha256
     }
 
     pub fn kind(&self) -> SeatPackageKind {
@@ -334,7 +340,7 @@ fn check_pin(field: &str, expected: &str, actual: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::card_def::{CARD_DEFS, KERNEL_CARDDB_HASH};
     use crate::cube_draft_build_v1::card_index::TABLE_SCHEMA_V1;
@@ -346,10 +352,18 @@ mod tests {
         json!({ "path": name, "sha256": sha256_hex(bytes) })
     }
 
-    fn uniform_manifest(directory: &Path, fenced: bool) -> Value {
+    pub(crate) fn uniform_manifest(directory: &Path, fenced: bool) -> Value {
         let basics = basic_land_ids().unwrap();
         let pool: Vec<_> = (0..CARD_DEFS.len() as u16)
-            .filter(|id| !basics.contains(id))
+            .filter(|id| {
+                !basics.contains(id)
+                    && crate::card_def::preflight_fully_supported_deck(&[*id]).is_ok()
+                    && crate::rl::require_declared_cards_for_scope(
+                        crate::rl::CommonProjectionScopeV42::ExistingV40,
+                        &[*id],
+                    )
+                    .is_ok()
+            })
             .take(SEATS * POOL_CARDS + usize::from(fenced))
             .collect();
         let mut index = pool.clone();
@@ -390,14 +404,14 @@ mod tests {
         })
     }
 
-    fn load_manifest(directory: &Path, manifest: &Value) -> Result<SeatPackage, String> {
+    pub(crate) fn load_manifest(directory: &Path, manifest: &Value) -> Result<SeatPackage, String> {
         let bytes = serde_json::to_vec(manifest).unwrap();
         let path = directory.join("package.json");
         fs::write(&path, &bytes).unwrap();
         SeatPackage::load_bound(&path, &sha256_hex(&bytes), &"a".repeat(64))
     }
 
-    fn test_directory() -> PathBuf {
+    pub(crate) fn test_directory() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "cube-seat-package-test-{}-{}",
             std::process::id(),
