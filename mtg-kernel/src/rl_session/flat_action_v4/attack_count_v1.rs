@@ -634,6 +634,10 @@ mod tests {
             ("src/card_def.rs", 1),
             ("src/engine.rs", 4),
             ("src/eternal_legacy_e9a_v1/statics.rs", 3),
+            // FlatV9's own columns (its extension and history facts) read the
+            // count directly; neither is a card reader.
+            ("src/flat_policy_v6.rs", 1),
+            ("src/flat_v9_history_v1.rs", 1),
             ("src/rl_session/flat_action_v4/attack_count_v1.rs", 12),
             ("src/infoset_v1/export.rs", 1),
             ("src/regret_census_v1/stage4a.rs", 1),
