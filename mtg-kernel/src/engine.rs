@@ -23852,8 +23852,14 @@ fn triggered_stack_item_expected_target_spec(
                             && owner == source_contract.owner
                             && controller == item.controller
                             && source.zone_change_count >= zone_change_count
+                            // A Ward source that phased out has not left the
+                            // battlefield (702.26d).
                             && (source.zone_change_count != zone_change_count
-                                || source.zone == Zone::Battlefield)
+                                || crate::state::incarnation_zone_holds(
+                                    state,
+                                    item.source,
+                                    Zone::Battlefield,
+                                ))
                     );
                     let printed_or_granted = source_def.ward_cost == Some(ward_cost)
                         || ward_cost == crate::card_def::WardCostDef::Generic(2)

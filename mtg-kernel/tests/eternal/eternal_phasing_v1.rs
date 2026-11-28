@@ -110,9 +110,18 @@ fn routine(decision: Decision) -> Action {
         }
         Decision::DeclareAttackers { .. } => Action::DeclareAttackers(Vec::new()),
         Decision::DeclareBlockers { .. } => Action::DeclareBlockers(Vec::new()),
+        Decision::ChooseTargets {
+            can_finish: true, ..
+        } => Action::FinishEffectSelection,
+        Decision::ChooseTargets { legal_targets, .. } => Action::ChooseTarget(legal_targets[0]),
         Decision::ChooseEffectTargets {
             can_finish: true, ..
         } => Action::FinishEffectSelection,
+        Decision::ChooseEffectTargets { legal_targets, .. } => {
+            Action::ChooseEffectTarget(legal_targets[0])
+        }
+        Decision::ChooseEffectOption { .. } => Action::ChooseEffectOption(0),
+        Decision::ChooseEffectBoolean { .. } => Action::ChooseEffectBoolean(false),
         Decision::Discard { count, choices, .. } => {
             Action::Discard(choices.into_iter().take(count as usize).collect())
         }
@@ -145,12 +154,14 @@ fn settle(state: &mut GameState) {
     });
 }
 
-/// `player`'s next first main phase, its untap step behind it.
+/// `player`'s next first main phase, its untap step behind it. (`turn` is
+/// the round, which both players' turns share.)
 fn to_main_of(state: &mut GameState, player: PlayerId) {
-    let turn = state.turn;
+    if state.active_player == player {
+        run_until(state, move |state, _| state.active_player != player);
+    }
     run_until(state, move |state, decision| {
         matches!(decision, Decision::CastSpellOrPass { .. })
-            && state.turn != turn
             && state.active_player == player
             && state.step == Step::Main1
             && state.stack.is_empty()
@@ -399,6 +410,7 @@ fn deep_cavern_bat_keeps_its_linked_exile_while_phased_out() {
         _ => false,
     });
     choose_bat_exile(&mut state, held);
+    settle(&mut state);
     assert_eq!(state.objects.get(held).zone, Zone::Exile);
 
     phase_out_with_gates(&mut state, P0, bat);
@@ -459,6 +471,7 @@ fn deep_cavern_bat_entry_trigger_after_it_phased_out_exiles_with_its_link() {
     if let Decision::ChooseTargets { .. } = next(&mut state) {
         act(&mut state, Action::ChooseTarget(Target::Player(P1)));
     }
+    run_until(&mut state, priority_for(P0));
     assert_eq!(state.stack.len(), 1, "the Bat's entry trigger waits");
     phase_out_with_gates(&mut state, P0, bat);
     public_view(&state);
@@ -636,4 +649,27 @@ fn animate_dead_phases_out_with_its_creature_and_keeps_its_link() {
         Zone::Graveyard,
         "sacrificed when Animate Dead leaves"
     );
+}
+
+/// Review finding: an ability whose source phased out halted when it read
+/// its source (taking the initiative). White Plume Adventurer phases out
+/// while its entry trigger waits; the trigger still resolves (113.7a) and its
+/// controller takes the initiative.
+#[test]
+fn taking_the_initiative_from_a_phased_out_source() {
+    let mut state = game(true);
+    let plume = put(&mut state, P0, "White Plume Adventurer", Zone::Hand);
+    pool(&mut state, P0, &[ManaColor::W], 2);
+    act(&mut state, Action::CastSpell(plume));
+    run_until(&mut state, |state, _| {
+        state.objects.get(plume).zone == Zone::Battlefield && !state.stack.is_empty()
+    });
+    phase_out_with_gates(&mut state, P0, plume);
+    assert_eq!(state.stack.len(), 1, "the entry trigger waits");
+    public_view(&state);
+    settle(&mut state);
+    assert_eq!(state.initiative, Some(P0));
+    to_main_of(&mut state, P1);
+    to_main_of(&mut state, P0);
+    assert_eq!(state.objects.get(plume).zone, Zone::Battlefield);
 }

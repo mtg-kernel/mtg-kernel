@@ -9326,8 +9326,11 @@ pub(crate) fn validate_initiative_trigger_binding(
         || source.owner != binding.source.owner
         || source.zone_change_count < binding.source.zone_change_count
         || (source.zone_change_count == binding.source.zone_change_count
-            && (source.zone != binding.source.zone
-                || source.v4.attached_to != binding.source.attached_to))
+            && (!crate::state::incarnation_zone_holds(
+                state,
+                binding.source.source,
+                binding.source.zone,
+            ) || source.v4.attached_to != binding.source.attached_to))
     {
         return Err("Initiative trigger source provenance is malformed".to_string());
     }
@@ -9368,8 +9371,11 @@ pub(crate) fn validate_monarch_trigger_binding(
         || source.owner != binding.source.owner
         || source.zone_change_count < binding.source.zone_change_count
         || (source.zone_change_count == binding.source.zone_change_count
-            && (source.zone != binding.source.zone
-                || source.v4.attached_to != binding.source.attached_to))
+            && (!crate::state::incarnation_zone_holds(
+                state,
+                binding.source.source,
+                binding.source.zone,
+            ) || source.v4.attached_to != binding.source.attached_to))
     {
         return Err("Monarch trigger source provenance is malformed".to_string());
     }
