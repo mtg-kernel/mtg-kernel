@@ -14,10 +14,6 @@
 //! The V9 identity is never compared against the V8, V7 or V4 one or
 //! relabeled as either.
 
-// The FlatV9 policy and its digest selection (T6, next change) are the
-// callers of the decision's extension, the digest switches and the labeled
-// view; until then they are unused.
-#![allow(dead_code)]
 
 use crate::flat_policy_v6::{
     FlatScoringDecisionViewV9, FLAT_V9_OBJECT_EXTRA_DIM_V1, FLAT_V9_STATE_EXTRA_DIM_V1,

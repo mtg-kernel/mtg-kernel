@@ -23,10 +23,6 @@
 //! public cards, public counters, public mana pools, public permissions and
 //! the public turn schedule. No hidden zone is read.
 
-// The FlatV9 policy and its digest selection (T6, next change) are the
-// callers of the decision's extension, the digest switches and the labeled
-// view; until then they are unused.
-#![allow(dead_code)]
 
 use crate::card_def::{CardType, Keywords, ManaSpendRestrictionDef};
 use crate::flat_policy_v2::{FlatDecisionErrorV2, FlatObjectGroupV2, FlatObjectSourceKindV2};
